@@ -165,8 +165,14 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
         }]
     }
     
+    # Delhivery expects form-encoded data, not JSON
+    import json as json_module
+    form_data = {
+        "format": "json",
+        "data": json_module.dumps(shipment_payload)
+    }
+    
     headers = {
-        "Content-Type": "application/json",
         "Authorization": f"Token {DELHIVERY_API_KEY}"
     }
     
@@ -174,11 +180,19 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 url,
-                json={"format": "json", "data": shipment_payload},
+                data=form_data,
                 headers=headers
             )
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            
+            # Check if Delhivery accepted the request
+            if not result.get("success", False):
+                error_msg = result.get("rmk", "Delhivery rejected the shipment")
+                logger.error(f"Delhivery API rejected shipment: {error_msg}")
+                raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
+            
+            return result
     except httpx.HTTPError as e:
         logger.error(f"Delhivery API error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Delhivery API error: {str(e)}")
@@ -207,22 +221,30 @@ async def schedule_delhivery_pickup(pickup_data: PickupRequest) -> Dict[str, Any
     url = f"{DELHIVERY_BASE_URL}/fm/request/new/"
     
     headers = {
-        "Content-Type": "application/json",
         "Authorization": f"Token {DELHIVERY_API_KEY}"
     }
     
-    payload = {
+    # Form-encoded data for Delhivery
+    form_data = {
         "pickup_location": pickup_data.pickup_location,
         "pickup_date": pickup_data.pickup_date,
         "pickup_time": pickup_data.pickup_time,
-        "expected_package_count": pickup_data.expected_package_count
+        "expected_package_count": str(pickup_data.expected_package_count)
     }
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(url, data=form_data, headers=headers)
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            
+            # Check if Delhivery accepted the pickup request
+            if not result.get("success", False):
+                error_msg = result.get("error", "Delhivery rejected the pickup request")
+                logger.error(f"Delhivery pickup API error: {error_msg}")
+                raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
+            
+            return result
     except httpx.HTTPError as e:
         logger.error(f"Pickup scheduling error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Pickup scheduling error: {str(e)}")
