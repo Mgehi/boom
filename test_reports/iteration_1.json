@@ -1,0 +1,49 @@
+{
+  "summary": "Backend (12/12 pytest) and frontend pages all load. CRITICAL: Delhivery shipment creation integration is broken - the create.json call returns 'format key missing in POST' from Delhivery, so no waybills are generated and all shipments persist as 'Pending' without a waybill. Root cause: Delhivery's /cmu/create.json endpoint expects application/x-www-form-urlencoded body (format=json&data=<json_string>), but server.py sends it as JSON. Because the HTTP call still returns 200, the backend silently saves a useless shipment record - downstream features (track, label) cannot work.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/orders & POST /api/shipments", "issue": "Delhivery create.json call sends JSON body but the API requires form-encoded body 'format=json&data=<json_str>'. Delhivery returns {success:false, rmk:'format key missing in POST'}, no waybill is returned, but backend still saves shipment (status=Pending, waybill=None). Should either (a) switch to form-encoded request as per Delhivery docs, and (b) raise/return an error to the client when delhivery_response.success is false instead of silently persisting.", "priority": "CRITICAL"},
+      {"endpoint": "GET /api/shipments/{id}/track and /label", "issue": "Cannot be exercised because no shipment ever gets a waybill (returns 400 'No waybill found'). Blocked by the create bug above.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/orders", "issue": "When Delhivery responds with success=false, backend swallows the failure and stores a Pending shipment. Should check delhivery_response.get('success') and surface the error (rmk) to the caller."},
+      {"endpoint": "GET /api/dashboard/stats", "issue": "today_shipments query compares ISO string with $gte against a datetime-derived isoformat - works only because created_at is stored as ISO string; fragile if datetime objects are ever stored. Consider storing created_at as native datetime in Mongo."},
+      {"endpoint": "POST /api/shipments", "issue": "Simply delegates to receive_order; both endpoints exist but do identical work. Consider de-duplicating or documenting intent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Create Shipment -> backend", "issue": "Form submits, shipment is created in DB but waybill is N/A and status stays Pending due to backend Delhivery integration bug. User has no error feedback - looks like success.", "affected_selectors": ["create-shipment form submit"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Stats use 4 cards (Today/In Transit/Delivered/Exceptions). Total shipments count from backend is never displayed. Layout, contrast and spacing look clean (Swiss style)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_delhivery_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix Delhivery create.json integration: use form-urlencoded POST. Replace httpx call with: client.post(url, data={'format':'json','data': json.dumps(shipment_payload)}, headers={'Authorization': f'Token {API_KEY}'}) (do NOT set Content-Type to application/json).",
+    "After Delhivery call, check response['success'] and response['error']; if false, raise HTTPException(400, detail=response.get('rmk','Delhivery rejected order')) instead of persisting a Pending shipment.",
+    "Surface backend errors in CreateShipment.jsx UI on submission failure.",
+    "Note: Even after the form-encoding fix, shipments may still fail until the pickup_location ('TestWarehouse') is registered with the Delhivery client warehouse setup. Recommend adding a 'register warehouse' helper or clearer error message.",
+    "Verify pickup endpoint - it also currently posts JSON to /fm/request/new/; double-check Delhivery docs for the correct content type."
+  ],
+  "critical_code_review_comments": [
+    "server.py:174-181 - create_delhivery_shipment sends data as JSON but Delhivery /cmu/create.json expects form-encoded (root cause of waybill failure).",
+    "server.py:240-263 - No validation of delhivery_response['success']; backend silently persists a failed shipment.",
+    "server.py:281 - POST /shipments simply calls receive_order; functionally identical, can be confusing.",
+    "server.py:411-414 - created_at stored as ISO string but query uses isoformat comparison; this works for today but is fragile. Prefer storing as native datetime.",
+    "No tests for negative cases on Delhivery integration (success=false handling)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_delhivery_api.py (new)",
+    "/app/backend/tests/__init__.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12 endpoint-level tests pass, but core business flow broken)", "frontend": "100% (all pages render, navigation works)"},
+  "test_credentials": "None required. Delhivery API key configured in backend/.env: e77ef181577c1ea451b6f6232c55122062441079",
+  "seed_data_creation": "Created shipments TEST_ORDER_PYTEST_001, TEST_ORDER_PYTEST_MANUAL_002, DEBUG_001 in MongoDB. All have status=Pending, waybill=None due to Delhivery format bug.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test file: /app/backend/tests/test_delhivery_api.py. After main agent fixes Delhivery integration to use form-encoded body, re-run pytest and additionally verify: (1) POST /api/orders returns shipment with a non-null waybill and status=Manifested; (2) GET /api/shipments/{id}/track returns tracking data; (3) GET /api/shipments/{id}/label returns a label URL; (4) Frontend CreateShipment shows success/error toast appropriately.",
+  "rca of the issue": "Delhivery /cmu/create.json requires a form-encoded payload of the shape 'format=json&data=<json string>'. The backend currently sends 'Content-Type: application/json' with a JSON body {'format':'json','data':{...}}. Delhivery does not parse JSON bodies for this endpoint, so its parser does not find the 'format' key and rejects the upload with rmk='format key missing in POST'. Backend currently does not check the success flag in the Delhivery response, so the failed upload is persisted as a Pending shipment without a waybill. Fix: use httpx data= (form-encoded) with json.dumps for the data field; verify response.success; on failure raise HTTPException with rmk message."
+}
