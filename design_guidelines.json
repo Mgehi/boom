@@ -1,0 +1,95 @@
+{
+  "theme": "Light",
+  "archetype": "4: Swiss & High-Contrast",
+  "mood": "Objective, rigid, functional, precision logistics",
+  "design_philosophy": "The UI must feel like a precision instrument for a logistics control room. Banish standard soft SaaS cards. Expose the skeleton with visible grid lines, sharp borders, and stark high-contrast typography. Information density is key, but clarity is paramount.",
+  "typography": {
+    "strategy": "Swiss Brutalist (Tech/Utility)",
+    "headings": {
+      "fontFamily": "Chivo, sans-serif",
+      "weights": ["400", "700", "900"],
+      "usage": "Use tracking-tight for all headings. Never use Inter for headings. Keep scales strictly within text-xl to text-4xl for the dashboard.",
+      "forbidden": ["Inter", "Roboto", "Open Sans", "Space Grotesk"]
+    },
+    "body": {
+      "fontFamily": "IBM Plex Sans, sans-serif",
+      "weights": ["400", "500"]
+    },
+    "data_and_mono": {
+      "fontFamily": "IBM Plex Mono, monospace",
+      "usage": "MANDATORY for Tracking IDs, Order Numbers, Dates, Times, and API Keys. Use uppercase labels with tracking-[0.2em] for table headers and overlines."
+    }
+  },
+  "colors": {
+    "backgrounds": {
+      "app": "bg-white",
+      "sidebar": "bg-[#FAFAFA]",
+      "table_header": "bg-[#FAFAFA]"
+    },
+    "text": {
+      "primary": "text-zinc-950",
+      "secondary": "text-zinc-500",
+      "tertiary": "text-zinc-400"
+    },
+    "primary_action": {
+      "DEFAULT": "bg-red-600 text-white",
+      "hover": "hover:bg-red-700 hover:text-white focus:ring-2 focus:ring-red-600/50"
+    },
+    "borders": {
+      "DEFAULT": "border-zinc-200",
+      "focus": "focus:border-zinc-900"
+    },
+    "status_indicators": {
+      "delivered": "bg-zinc-900 text-white border-transparent",
+      "transit": "bg-zinc-100 text-zinc-900 border-zinc-300",
+      "exception": "bg-red-50 text-red-700 border-red-200",
+      "pending": "bg-white text-zinc-600 border-zinc-200"
+    }
+  },
+  "layout_and_spacing": {
+    "global": "Mobile-first responsive grids. Generous padding around the main layout but dense data within components.",
+    "surface_strategy": "Grid Borders (The 'Technical' Look). Use border-collapse style layouts for features. Remove border on the last item to create an open edge.",
+    "dashboard_grid": {
+      "type": "Control Room Grid",
+      "specs": "Base grid-cols-1 md:grid-cols-3 lg:grid-cols-4 with gap-4 or gap-px (if using background grid lines).",
+      "summary_widgets": "col-span-1",
+      "main_table": "col-span-2 md:col-span-3 lg:col-span-4"
+    },
+    "components": {
+      "cards": "DO NOT USE default Shadcn rounded cards with shadows. Use flat, sharp rectangular containers (rounded-none or max rounded-sm) with 1px solid border-zinc-200. NO SHADOWS.",
+      "inputs": "Flat, strict rectangles. bg-white border-zinc-200 text-sm. Focus state MUST have high contrast focus:ring-2 focus:ring-zinc-900.",
+      "buttons": "Square edges (rounded-sm). Font-weight medium to bold.",
+      "tables": "Dense. text-sm. Use monospaced font for IDs. Border-b only for rows.",
+      "modals_dialogs": "Flat solid background. No glassmorphism. Sharp borders."
+    }
+  },
+  "views_and_features_spec": {
+    "dashboard_home": "Top KPI strip (Shipments Today, In Transit, Delivered, Exceptions). Below: Recent Shipments Data Table. Keep it 1-insight-per-scroll.",
+    "create_shipment_form": "2-column grid structure (Sender on left, Receiver on right). Clear separation. Use Shadcn form primitives but style them brutally flat.",
+    "tracking_view": "Vertical stepper timeline for status. Minimalist, high contrast.",
+    "api_and_settings": "Display the provided API Key (`e77ef181577c1ea451b6f6232c55122062441079`) in a distinct, monospaced read-only block. Provide a 'Copy' button."
+  },
+  "images_and_media": {
+    "empty_state_box": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/9f4b3913-0e32-441f-a344-b5a13d5980ad/images/d3716dc3e0b8a4a4abfbdec8bcecc73e98fa16470f0502f3a683c38902e36d0e.png",
+      "description": "Minimalist 3D isometric render of a pristine white shipping box with subtle blue shadows.",
+      "usage": "MANDATORY for empty states (e.g., 'No shipments found', 'No tracking data'). Center it, add generous padding, keep it small (max-w-[200px])."
+    },
+    "auth_background_pattern": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/9f4b3913-0e32-441f-a344-b5a13d5980ad/images/ca2babf6c1284ffff044ee38566b8cd8f3244480f3ef599df518563c6b4b149b.png",
+      "description": "Abstract logistics network pattern. Subtle light grey on white.",
+      "usage": "Use as a background cover for authentication pages or decorative sidebar areas. Overlay with bg-white/50 if needed for text contrast."
+    },
+    "logistics_hero_stock": {
+      "url": "https://images.unsplash.com/photo-1577705998148-6da4f3963bc8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwzfHxzaGlwcGluZyUyMHBhcmNlbCUyMG1pbmltYWx8ZW58MHx8fHwxNzc5ODc1MDEyfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Shallow focus photo of a brown cardboard box.",
+      "usage": "Use in 'Schedule Pickup' marketing banner or onboarding cards."
+    }
+  },
+  "technical_and_interaction_rules": {
+    "testing_attributes": "CRITICAL: All interactive and key informational elements MUST include `data-testid` attribute (e.g., `data-testid='create-shipment-button'`).",
+    "accessibility": "Minimum 4.5:1 contrast ratio. ALWAYS explicitly set text color on hover (e.g., `hover:bg-zinc-900 hover:text-white`).",
+    "motion": "Minimal. Use simple opacity/transform transitions for hover states (0.2s ease). No bouncy or playful animations.",
+    "icons": "Use Phosphor Icons or Lucide-react for sharp, precise symbology."
+  }
+}
