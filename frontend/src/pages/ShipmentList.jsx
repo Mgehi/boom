@@ -119,6 +119,7 @@ export const ShipmentList = () => {
               <tr className="border-b border-zinc-200">
                 <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Order ID</th>
                 <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Waybill</th>
+                <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Type</th>
                 <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Receiver</th>
                 <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">City</th>
                 <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Status</th>
@@ -135,6 +136,15 @@ export const ShipmentList = () => {
                     </Link>
                   </td>
                   <td className="px-6 py-4 mono text-zinc-600">{shipment.waybill || "N/A"}</td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-medium border ${
+                      shipment.shipment_type === "RVP"
+                        ? "bg-zinc-100 text-zinc-900 border-zinc-300"
+                        : "bg-white text-zinc-600 border-zinc-200"
+                    }`} data-testid={`shipment-type-badge-${shipment.shipment_type}`}>
+                      {shipment.shipment_type === "RVP" ? "Reverse" : "Forward"}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-zinc-900">{shipment.receiver.name}</td>
                   <td className="px-6 py-4 text-zinc-600">{shipment.receiver.city}</td>
                   <td className="px-6 py-4">

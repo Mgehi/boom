@@ -66,6 +66,11 @@ class OrderItem(BaseModel):
     qty: int
     price: float
     sku: Optional[str] = None
+    hsn_code: Optional[str] = ""
+
+class ShipmentType(str, Enum):
+    FORWARD = "FWD"
+    REVERSE = "RVP"
 
 class CreateShipmentRequest(BaseModel):
     order_id: str
@@ -75,10 +80,13 @@ class CreateShipmentRequest(BaseModel):
     items: List[OrderItem]
     payment_mode: PaymentMode
     cod_amount: Optional[float] = 0
-    weight: float
+    weight: float  # in kg (converted to grams for Delhivery)
     length: Optional[float] = 10
     breadth: Optional[float] = 10
     height: Optional[float] = 10
+    seller_gst: Optional[str] = ""
+    seller_invoice: Optional[str] = ""
+    shipment_type: ShipmentType = ShipmentType.FORWARD
 
 class Shipment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -96,6 +104,9 @@ class Shipment(BaseModel):
     length: float = 10
     breadth: float = 10
     height: float = 10
+    seller_gst: Optional[str] = ""
+    seller_invoice: Optional[str] = ""
+    shipment_type: ShipmentType = ShipmentType.FORWARD
     status: ShipmentStatus = ShipmentStatus.PENDING
     delhivery_response: Optional[Dict[str, Any]] = None
     tracking_data: Optional[Dict[str, Any]] = None
@@ -140,6 +151,7 @@ class BusinessSettings(BaseModel):
     sender_state: str = ""
     sender_pincode: str = ""
     pickup_location: str = ""
+    seller_gst: Optional[str] = ""
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class WarehouseRegistration(BaseModel):
@@ -167,6 +179,12 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
     # Prepare Delhivery payload
     # pickup_location must only contain the warehouse name (must be pre-registered in Delhivery)
     # Extra fields cause "ClientWarehouse matching query does not exist." errors
+    # Weight is in GRAMS for Delhivery (input is kg, multiply by 1000)
+    # For reverse shipment (RVP): pickup is FROM the receiver TO the warehouse
+    
+    weight_grams = int(shipment_data.weight * 1000)
+    hsn_codes = ",".join([item.hsn_code or "" for item in shipment_data.items])
+    
     shipment_payload = {
         "shipments": [{
             "name": shipment_data.receiver.name,
@@ -185,21 +203,23 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
             "return_state": shipment_data.sender.state,
             "return_country": shipment_data.sender.country,
             "products_desc": ", ".join([item.name for item in shipment_data.items]),
-            "hsn_code": "",
+            "hsn_code": hsn_codes,
             "cod_amount": str(shipment_data.cod_amount) if shipment_data.payment_mode == PaymentMode.COD else "0",
             "order_date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             "total_amount": str(sum([item.price * item.qty for item in shipment_data.items])),
             "seller_add": shipment_data.sender.address,
             "seller_name": shipment_data.sender.name,
-            "seller_inv": "",
+            "seller_inv": shipment_data.seller_invoice or "",
             "quantity": str(sum([item.qty for item in shipment_data.items])),
             "waybill": "",
-            "shipment_width": str(shipment_data.breadth),
-            "shipment_height": str(shipment_data.height),
-            "weight": str(shipment_data.weight),
-            "seller_gst_tin": "",
+            "shipment_width": str(int(shipment_data.breadth)),
+            "shipment_height": str(int(shipment_data.height)),
+            "shipment_length": str(int(shipment_data.length)),
+            "weight": str(weight_grams),
+            "seller_gst_tin": shipment_data.seller_gst or "",
             "shipping_mode": "Surface",
-            "address_type": "home"
+            "address_type": "home",
+            "pickup_type": shipment_data.shipment_type.value
         }],
         "pickup_location": {
             "name": shipment_data.pickup_location
@@ -329,6 +349,9 @@ async def receive_order(order: CreateShipmentRequest):
             length=order.length,
             breadth=order.breadth,
             height=order.height,
+            seller_gst=order.seller_gst,
+            seller_invoice=order.seller_invoice,
+            shipment_type=order.shipment_type,
             status=ShipmentStatus.MANIFESTED if waybill else ShipmentStatus.PENDING,
             delhivery_response=delhivery_response
         )
@@ -669,9 +692,10 @@ async def register_warehouse(warehouse: WarehouseRegistration):
 @api_router.get("/shipments/bulk/template")
 async def download_bulk_template():
     """Download CSV template for bulk shipment upload"""
-    csv_content = """order_id,receiver_name,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_pincode,item_name,item_qty,item_price,payment_mode,cod_amount,weight,length,breadth,height
-ORD001,John Doe,9876543210,john@example.com,123 Main Street,Mumbai,Maharashtra,400001,Sample Product,1,999.00,Prepaid,0,0.5,10,10,10
-ORD002,Jane Smith,9876543211,jane@example.com,456 Park Road,Delhi,Delhi,110001,Electronics Item,2,1499.00,COD,2998.00,1.5,20,15,10
+    csv_content = """order_id,receiver_name,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_pincode,item_name,item_qty,item_price,hsn_code,payment_mode,cod_amount,weight,length,breadth,height,shipment_type,invoice_number
+ORD001,John Doe,9876543210,john@example.com,123 Main Street,Mumbai,Maharashtra,400001,Sample Product,1,999.00,6109,Prepaid,0,0.5,10,10,10,FWD,INV001
+ORD002,Jane Smith,9876543211,jane@example.com,456 Park Road,Delhi,Delhi,110001,Electronics Item,2,1499.00,8517,COD,2998.00,1.5,20,15,10,FWD,INV002
+RVP001,Return Customer,9876543212,return@example.com,789 Return Lane,Pune,Maharashtra,411001,Defective Item,1,599.00,6109,Prepaid,0,0.5,10,10,10,RVP,INV003
 """
     return StreamingResponse(
         io.BytesIO(csv_content.encode("utf-8")),
@@ -734,14 +758,18 @@ async def bulk_upload_shipments(file: UploadFile = File(...)):
                 items=[OrderItem(
                     name=row["item_name"].strip(),
                     qty=int(row["item_qty"]),
-                    price=float(row["item_price"])
+                    price=float(row["item_price"]),
+                    hsn_code=row.get("hsn_code", "").strip()
                 )],
                 payment_mode=PaymentMode(row["payment_mode"].strip()),
                 cod_amount=float(row.get("cod_amount", 0) or 0),
                 weight=float(row["weight"]),
                 length=float(row.get("length", 10) or 10),
                 breadth=float(row.get("breadth", 10) or 10),
-                height=float(row.get("height", 10) or 10)
+                height=float(row.get("height", 10) or 10),
+                seller_gst=settings.get("seller_gst", "") or "",
+                seller_invoice=row.get("invoice_number", "").strip(),
+                shipment_type=ShipmentType(row.get("shipment_type", "FWD").strip() or "FWD")
             )
             
             shipment = await _create_shipment_internal(order)
@@ -877,6 +905,9 @@ async def _create_shipment_internal(order: CreateShipmentRequest) -> Shipment:
         length=order.length,
         breadth=order.breadth,
         height=order.height,
+        seller_gst=order.seller_gst,
+        seller_invoice=order.seller_invoice,
+        shipment_type=order.shipment_type,
         status=ShipmentStatus.MANIFESTED if waybill else ShipmentStatus.PENDING,
         delhivery_response=delhivery_response
     )

@@ -25,6 +25,7 @@ export const Settings = () => {
     sender_state: "",
     sender_pincode: "",
     pickup_location: "",
+    seller_gst: "",
   });
 
   const webhookUrl = `${BACKEND_URL}/api/orders`;
@@ -46,6 +47,7 @@ export const Settings = () => {
         sender_state: response.data.sender_state || "",
         sender_pincode: response.data.sender_pincode || "",
         pickup_location: response.data.pickup_location || "",
+        seller_gst: response.data.seller_gst || "",
       });
     } catch (error) {
       console.error("Failed to load settings", error);
@@ -226,6 +228,18 @@ export const Settings = () => {
                 data-testid="sender-state-setting-input"
                 className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
               />
+            </div>
+            <div className="md:col-span-2">
+              <Label className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">Seller GSTIN (Optional)</Label>
+              <Input
+                name="seller_gst"
+                value={settings.seller_gst}
+                onChange={handleChange}
+                placeholder="e.g., 27ABCDE1234F1Z5"
+                data-testid="seller-gst-setting-input"
+                className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm mono"
+              />
+              <p className="text-xs text-zinc-500 mt-1">Your business GST number. Will be auto-filled on all shipments and invoices.</p>
             </div>
           </div>
 

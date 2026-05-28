@@ -1,0 +1,57 @@
+{
+  "summary": "Full regression for Iteration-4 Delhivery features: weight-in-grams + missing shipment_length, Seller GST in settings & create-shipment, HSN code per item, Invoice number, Forward/Reverse (FWD/RVP) shipment_type and Reverse pickup. 8 new backend tests + 7 prior iteration-3 tests all pass (15/15) against live Delhivery API (STAYFREE / GEETA69 FRANCHISE). Real waybills issued for FWD (e.g. 27633910160565), RVP (e.g. 27633910160576) and bulk-CSV row. Frontend Settings GST save/reload, Create-Shipment GST autofill+HSN+Invoice+Shipment Type dropdown with RVP notice, and Shipments list Type column with Forward/Reverse badges all verified live.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_features.py",
+    "/app/backend/tests/test_iteration3_fixes.py",
+    "/app/test_reports/pytest/iter4_results.xml"
+  ],
+  "action_items": [
+    "(Optional, carried over) Replace native <input type=date> on SchedulePickup with shadcn Calendar/Popover for design consistency.",
+    "(Optional refactor, carried over) server.py is large; consider splitting into routes/, services/delhivery.py, models.py for maintainability (>700 line threshold)."
+  ],
+  "critical_code_review_comments": [
+    "create_delhivery_shipment() correctly converts weight to grams (int(weight*1000)) and includes shipment_length, shipment_width, shipment_height as integers - verified via unit-style payload inspection.",
+    "pickup_type field is sourced from CreateShipmentRequest.shipment_type (FWD/RVP) - Delhivery accepted both manifest types; live waybills returned for each.",
+    "BusinessSettings model now includes seller_gst; PUT /api/settings persists it and GET returns it correctly.",
+    "OrderItem has hsn_code field; persisted in MongoDB and visible in GET /api/shipments/{id}.",
+    "CreateShipmentRequest exposes seller_gst, seller_invoice, shipment_type with sensible default ShipmentType.FORWARD - prevents existing clients from breaking.",
+    "Bulk upload CSV template includes hsn_code, shipment_type, invoice_number columns; bulk parser maps each row correctly and falls back to settings.seller_gst per shipment when row omits GST.",
+    "All endpoints return JSON without MongoDB _id leakage; URLs and API keys come from env vars (no hardcoding)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4_features.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15: 8 iter4 + 7 iter3 regression)",
+    "frontend": "100% of tested flows (Settings GST persist/load, Create-Shipment GST autofill + HSN + Invoice + Shipment-Type dropdown with RVP notice toggle, Shipments list Type column with FWD=15 + RVP=2 badges)"
+  },
+  "test_credentials": "Delhivery API key in backend/.env (e77ef181...). Live API; STAYFREE warehouse on client GEETA69 FRANCHISE; sample GST 23ABCDE1234F1Z5; sample HSN 6109.",
+  "seed_data_creation": "Live shipments created during test run: 1 FWD (TEST_IT4_FWD_<ts>), 1 RVP (TEST_IT4_RVP_<ts>), 1 bulk row (TEST_IT4_BULK_<ts>) - all manifested with real waybills (27633910160565 / 27633910160576 / 27633910160580 visible in Shipments list).",
+  "verified_endpoints": [
+    "PUT /api/settings {seller_gst:...} -> 200 returns seller_gst",
+    "GET /api/settings -> 200 includes seller_gst",
+    "POST /api/orders {shipment_type:FWD, weight:2.5, length:30, breadth:20, height:15, seller_gst, seller_invoice, items[].hsn_code} -> 200 real waybill, Manifested, FWD",
+    "POST /api/orders {shipment_type:RVP, ...} -> 200 real waybill, Manifested, RVP",
+    "GET /api/shipments/{id} -> persists seller_gst, seller_invoice, shipment_type, items[].hsn_code",
+    "GET /api/shipments/bulk/template -> CSV header includes hsn_code, shipment_type, invoice_number",
+    "POST /api/shipments/bulk/upload (multipart CSV) -> 200, picks up seller_gst from settings, accepts hsn_code/shipment_type/invoice_number per row, manifests shipment"
+  ],
+  "verified_frontend_flows": [
+    "Settings: seller_gst loads from backend, edit + Save + reload persists new value; restored to 23ABCDE1234F1Z5 for downstream tests.",
+    "Create Shipment: seller_gst autofilled from Settings; HSN code, Invoice Number, Seller GSTIN inputs all visible.",
+    "Create Shipment: Shipment Type dropdown switches between Forward and Reverse Pickup; RVP notice banner appears for Reverse and hides for Forward.",
+    "Shipments list: Type column header present; renders 15 Forward badges and 2 Reverse badges with data-testid='shipment-type-badge-{FWD|RVP}'."
+  ],
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tests use REACT_APP_BACKEND_URL env (export from frontend/.env before pytest). Settings model defaults seller_gst='' so PUT must include full settings dict (frontend already does this). ShipmentType enum values: 'FWD'/'RVP'. Default for shipment_type=FORWARD keeps backward compatibility. Pydantic EmailStr still rejects '.test' TLD - use example.com. Live Delhivery: STAYFREE on GEETA69 FRANCHISE remains the only valid pickup_location."
+}
