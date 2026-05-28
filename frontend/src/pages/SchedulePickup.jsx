@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -11,12 +11,22 @@ const API = `${BACKEND_URL}/api`;
 
 export const SchedulePickup = () => {
   const [loading, setLoading] = useState(false);
+  const [defaultPickup, setDefaultPickup] = useState("");
   const [formData, setFormData] = useState({
     pickup_location: "",
     pickup_date: "",
-    pickup_time: "",
     expected_package_count: 1,
   });
+
+  useEffect(() => {
+    // Load default pickup location from settings
+    axios.get(`${API}/settings`).then((res) => {
+      if (res.data?.pickup_location) {
+        setDefaultPickup(res.data.pickup_location);
+        setFormData((prev) => ({ ...prev, pickup_location: res.data.pickup_location }));
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -28,12 +38,16 @@ export const SchedulePickup = () => {
     setLoading(true);
 
     try {
-      await axios.post(`${API}/pickups`, formData);
+      // Send default pickup_time of "10:00:00" - backend handles it
+      await axios.post(`${API}/pickups`, {
+        ...formData,
+        pickup_time: "10:00:00",
+        expected_package_count: parseInt(formData.expected_package_count),
+      });
       toast.success("Pickup scheduled successfully!");
       setFormData({
-        pickup_location: "",
+        pickup_location: defaultPickup,
         pickup_date: "",
-        pickup_time: "",
         expected_package_count: 1,
       });
     } catch (error) {
@@ -53,14 +67,9 @@ export const SchedulePickup = () => {
 
       <div className="max-w-3xl">
         {/* Hero Banner */}
-        <div className="relative h-48 mb-8 rounded-sm overflow-hidden border border-zinc-200">
-          <img
-            src="https://images.unsplash.com/photo-1577705998148-6da4f3963bc8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwzfHxzaGlwcGluZyUyMHBhcmNlbCUyMG1pbmltYWx8ZW58MHx8fHwxNzc5ODc1MDEyfDA&ixlib=rb-4.1.0&q=85"
-            alt="Pickup scheduling"
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-zinc-900/40 flex items-center justify-center">
-            <div className="text-center text-white">
+        <div className="relative h-40 mb-8 rounded-sm overflow-hidden border border-zinc-200 bg-zinc-900">
+          <div className="absolute inset-0 flex items-center justify-center text-white">
+            <div className="text-center">
               <Calendar className="w-12 h-12 mx-auto mb-3" />
               <h2 className="text-2xl font-bold tracking-tight">Schedule Your Pickup</h2>
             </div>
@@ -83,7 +92,7 @@ export const SchedulePickup = () => {
                 placeholder="Enter your registered warehouse name"
                 className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
               />
-              <p className="text-xs text-zinc-500 mt-2">Must match your registered warehouse name exactly</p>
+              <p className="text-xs text-zinc-500 mt-2">Must match your registered warehouse name in Delhivery exactly</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -98,43 +107,28 @@ export const SchedulePickup = () => {
                   value={formData.pickup_date}
                   onChange={handleChange}
                   required
+                  min={new Date().toISOString().split("T")[0]}
                   data-testid="pickup-date-input"
                   className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
                 />
               </div>
 
               <div>
-                <Label htmlFor="pickup_time" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">
-                  Pickup Time *
+                <Label htmlFor="expected_package_count" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">
+                  Expected Package Count *
                 </Label>
                 <Input
-                  id="pickup_time"
-                  name="pickup_time"
-                  type="time"
-                  value={formData.pickup_time}
+                  id="expected_package_count"
+                  name="expected_package_count"
+                  type="number"
+                  min="1"
+                  value={formData.expected_package_count}
                   onChange={handleChange}
                   required
-                  data-testid="pickup-time-input"
+                  data-testid="package-count-input"
                   className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
                 />
               </div>
-            </div>
-
-            <div>
-              <Label htmlFor="expected_package_count" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">
-                Expected Package Count *
-              </Label>
-              <Input
-                id="expected_package_count"
-                name="expected_package_count"
-                type="number"
-                min="1"
-                value={formData.expected_package_count}
-                onChange={handleChange}
-                required
-                data-testid="package-count-input"
-                className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
-              />
             </div>
           </div>
 

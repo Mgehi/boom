@@ -5,6 +5,7 @@ import CreateShipment from "@/pages/CreateShipment";
 import ShipmentList from "@/pages/ShipmentList";
 import ShipmentDetail from "@/pages/ShipmentDetail";
 import SchedulePickup from "@/pages/SchedulePickup";
+import BulkUpload from "@/pages/BulkUpload";
 import Settings from "@/pages/Settings";
 import Layout from "@/components/Layout";
 
@@ -16,6 +17,7 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="create-shipment" element={<CreateShipment />} />
+            <Route path="bulk-upload" element={<BulkUpload />} />
             <Route path="shipments" element={<ShipmentList />} />
             <Route path="shipments/:id" element={<ShipmentDetail />} />
             <Route path="pickup" element={<SchedulePickup />} />

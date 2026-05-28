@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,6 +12,9 @@ import uuid
 from datetime import datetime, timezone
 import httpx
 from enum import Enum
+import csv
+import io
+import zipfile
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -101,7 +105,7 @@ class Shipment(BaseModel):
 class PickupRequest(BaseModel):
     pickup_location: str
     pickup_date: str
-    pickup_time: str
+    pickup_time: Optional[str] = "10:00:00"
     expected_package_count: int
 
 class Pickup(BaseModel):
@@ -110,7 +114,7 @@ class Pickup(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     pickup_location: str
     pickup_date: str
-    pickup_time: str
+    pickup_time: str = "10:00:00"
     expected_package_count: int
     status: str = "Scheduled"
     delhivery_response: Optional[Dict[str, Any]] = None
@@ -122,6 +126,38 @@ class DashboardStats(BaseModel):
     in_transit: int
     delivered: int
     exceptions: int
+
+class BusinessSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    business_name: str = ""
+    sender_name: str = ""
+    sender_phone: str = ""
+    sender_email: Optional[str] = None
+    sender_address: str = ""
+    sender_city: str = ""
+    sender_state: str = ""
+    sender_pincode: str = ""
+    pickup_location: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class WarehouseRegistration(BaseModel):
+    name: str
+    email: str
+    phone: str
+    address: str
+    city: str
+    state: str
+    country: str = "India"
+    pin: str
+    return_address: Optional[str] = None
+    return_pin: Optional[str] = None
+    return_city: Optional[str] = None
+    return_state: Optional[str] = None
+
+class PincodeCheckRequest(BaseModel):
+    pincode: str
 
 # Delhivery API Functions
 async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dict[str, Any]:
@@ -162,7 +198,15 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
             "seller_gst_tin": "",
             "shipping_mode": "Surface",
             "address_type": "home"
-        }]
+        }],
+        "pickup_location": {
+            "name": shipment_data.pickup_location,
+            "add": shipment_data.sender.address,
+            "city": shipment_data.sender.city,
+            "pin_code": shipment_data.sender.pincode,
+            "country": shipment_data.sender.country,
+            "phone": shipment_data.sender.phone
+        }
     }
     
     # Delhivery expects form-encoded data, not JSON
@@ -367,7 +411,7 @@ async def track_shipment(shipment_id: str):
 
 @api_router.get("/shipments/{shipment_id}/label")
 async def get_shipment_label(shipment_id: str):
-    """Generate and get waybill label URL"""
+    """Generate and stream waybill label PDF"""
     shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
     
     if not shipment:
@@ -376,14 +420,41 @@ async def get_shipment_label(shipment_id: str):
     if not shipment.get("waybill"):
         raise HTTPException(status_code=400, detail="No waybill found for this shipment")
     
-    # Delhivery label URL format
-    label_url = f"{DELHIVERY_BASE_URL}/api/p/packing_slip?wbns={shipment['waybill']}&pdf=true"
+    # Fetch label PDF from Delhivery
+    url = f"{DELHIVERY_BASE_URL}/p/packing_slip"
+    params = {"wbns": shipment["waybill"], "pdf": "true"}
+    headers = {"Authorization": f"Token {DELHIVERY_API_KEY}"}
     
-    return {
-        "waybill": shipment["waybill"],
-        "label_url": label_url,
-        "message": "Use this URL to download the shipping label"
-    }
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            
+            content_type = response.headers.get("content-type", "")
+            
+            # If PDF is returned directly
+            if "application/pdf" in content_type:
+                return StreamingResponse(
+                    io.BytesIO(response.content),
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="label_{shipment["waybill"]}.pdf"'}
+                )
+            
+            # If JSON response with packages array (Delhivery returns HTML or JSON)
+            if "application/json" in content_type:
+                data = response.json()
+                # Delhivery returns label info in packages array
+                return data
+            
+            # Fallback: return raw content as PDF
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type=content_type or "application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="label_{shipment["waybill"]}.pdf"'}
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"Label download error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download label: {str(e)}")
 
 @api_router.post("/pickups", response_model=Pickup)
 async def schedule_pickup(pickup: PickupRequest):
@@ -447,6 +518,301 @@ async def get_dashboard_stats():
         delivered=delivered,
         exceptions=exceptions
     )
+
+# ============ Business Settings (Default Sender) ============
+@api_router.get("/settings")
+async def get_settings():
+    """Get business settings (default sender details)"""
+    settings = await db.settings.find_one({}, {"_id": 0})
+    if not settings:
+        return BusinessSettings().model_dump()
+    return settings
+
+@api_router.put("/settings")
+async def update_settings(settings: BusinessSettings):
+    """Update business settings (default sender details)"""
+    settings.updated_at = datetime.now(timezone.utc)
+    doc = settings.model_dump()
+    doc['updated_at'] = doc['updated_at'].isoformat()
+    
+    await db.settings.update_one(
+        {},
+        {"$set": doc},
+        upsert=True
+    )
+    return doc
+
+# ============ Pincode Serviceability Check ============
+@api_router.get("/pincode/check")
+async def check_pincode_serviceability(pincode: str):
+    """Check if a pincode is serviceable by Delhivery"""
+    # Pincode endpoint uses a different base path
+    base = DELHIVERY_BASE_URL.replace("/api", "")
+    url = f"{base}/c/api/pin-codes/json/"
+    headers = {"Authorization": f"Token {DELHIVERY_API_KEY}"}
+    params = {"filter_codes": pincode}
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            response = await http_client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            delivery_codes = data.get("delivery_codes", [])
+            if not delivery_codes:
+                return {
+                    "pincode": pincode,
+                    "serviceable": False,
+                    "message": f"Pincode {pincode} is not serviceable"
+                }
+            
+            postal_code = delivery_codes[0].get("postal_code", {})
+            return {
+                "pincode": pincode,
+                "serviceable": True,
+                "city": postal_code.get("city", ""),
+                "state": postal_code.get("state_code", ""),
+                "district": postal_code.get("district", ""),
+                "cod_available": postal_code.get("cod") == "Y",
+                "prepaid_available": postal_code.get("pre_paid") == "Y",
+                "pickup_available": postal_code.get("pickup") == "Y",
+                "country": postal_code.get("country_code", "IN"),
+                "raw_data": postal_code
+            }
+    except httpx.HTTPError as e:
+        logger.error(f"Pincode check error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to check pincode: {str(e)}")
+
+# ============ Warehouse Registration ============
+@api_router.post("/warehouse/register")
+async def register_warehouse(warehouse: WarehouseRegistration):
+    """Register a warehouse/pickup location with Delhivery"""
+    url = f"{DELHIVERY_BASE_URL}/backend/clientwarehouse/create/"
+    headers = {
+        "Authorization": f"Token {DELHIVERY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = warehouse.model_dump(exclude_none=True)
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.post(url, json=payload, headers=headers)
+            result = response.json() if response.content else {}
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"Warehouse {warehouse.name} registered with Delhivery")
+                return {"success": True, "message": "Warehouse registered successfully", "data": result}
+            else:
+                error_msg = result.get("error", result.get("data", "Registration failed"))
+                raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
+    except httpx.HTTPError as e:
+        logger.error(f"Warehouse registration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to register warehouse: {str(e)}")
+
+# ============ Bulk Shipment Upload (CSV) ============
+@api_router.get("/shipments/bulk/template")
+async def download_bulk_template():
+    """Download CSV template for bulk shipment upload"""
+    csv_content = """order_id,receiver_name,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_pincode,item_name,item_qty,item_price,payment_mode,cod_amount,weight,length,breadth,height
+ORD001,John Doe,9876543210,john@example.com,123 Main Street,Mumbai,Maharashtra,400001,Sample Product,1,999.00,Prepaid,0,0.5,10,10,10
+ORD002,Jane Smith,9876543211,jane@example.com,456 Park Road,Delhi,Delhi,110001,Electronics Item,2,1499.00,COD,2998.00,1.5,20,15,10
+"""
+    return StreamingResponse(
+        io.BytesIO(csv_content.encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="bulk_shipment_template.csv"'}
+    )
+
+@api_router.post("/shipments/bulk/upload")
+async def bulk_upload_shipments(file: UploadFile = File(...)):
+    """Upload CSV file to create multiple shipments at once"""
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    
+    # Get default sender settings
+    settings = await db.settings.find_one({}, {"_id": 0})
+    if not settings or not settings.get("sender_name"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please configure default sender details in Settings before bulk upload"
+        )
+    
+    content = await file.read()
+    csv_text = content.decode("utf-8")
+    reader = csv.DictReader(io.StringIO(csv_text))
+    
+    results = {
+        "total": 0,
+        "success": 0,
+        "failed": 0,
+        "shipments": [],
+        "errors": []
+    }
+    
+    for row in reader:
+        results["total"] += 1
+        try:
+            order = CreateShipmentRequest(
+                order_id=row["order_id"].strip(),
+                pickup_location=settings.get("pickup_location", ""),
+                sender=Address(
+                    name=settings["sender_name"],
+                    phone=settings["sender_phone"],
+                    email=settings.get("sender_email") or None,
+                    address=settings["sender_address"],
+                    city=settings["sender_city"],
+                    state=settings["sender_state"],
+                    pincode=settings["sender_pincode"],
+                    country="India"
+                ),
+                receiver=Address(
+                    name=row["receiver_name"].strip(),
+                    phone=row["receiver_phone"].strip(),
+                    email=row.get("receiver_email", "").strip() or None,
+                    address=row["receiver_address"].strip(),
+                    city=row["receiver_city"].strip(),
+                    state=row["receiver_state"].strip(),
+                    pincode=row["receiver_pincode"].strip(),
+                    country="India"
+                ),
+                items=[OrderItem(
+                    name=row["item_name"].strip(),
+                    qty=int(row["item_qty"]),
+                    price=float(row["item_price"])
+                )],
+                payment_mode=PaymentMode(row["payment_mode"].strip()),
+                cod_amount=float(row.get("cod_amount", 0) or 0),
+                weight=float(row["weight"]),
+                length=float(row.get("length", 10) or 10),
+                breadth=float(row.get("breadth", 10) or 10),
+                height=float(row.get("height", 10) or 10)
+            )
+            
+            shipment = await _create_shipment_internal(order)
+            results["success"] += 1
+            results["shipments"].append({
+                "order_id": shipment.order_id,
+                "waybill": shipment.waybill,
+                "status": shipment.status.value
+            })
+        except Exception as e:
+            results["failed"] += 1
+            results["errors"].append({
+                "order_id": row.get("order_id", "Unknown"),
+                "error": str(e)
+            })
+            logger.error(f"Bulk upload error for {row.get('order_id')}: {str(e)}")
+    
+    return results
+
+@api_router.get("/shipments/bulk/download")
+async def bulk_download_shipments(status: Optional[ShipmentStatus] = None):
+    """Download all shipments as a single CSV file"""
+    query = {}
+    if status:
+        query["status"] = status.value
+    
+    shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Order ID", "Waybill", "Status", "Receiver Name", "Receiver Phone",
+        "Receiver Address", "Receiver City", "Receiver State", "Receiver Pincode",
+        "Sender Name", "Sender City", "Items", "Weight (kg)", "Payment Mode",
+        "COD Amount", "Total Amount", "Created Date"
+    ])
+    
+    for s in shipments:
+        items_str = "; ".join([f"{i['name']} (x{i['qty']})" for i in s.get("items", [])])
+        total_amount = sum([i["price"] * i["qty"] for i in s.get("items", [])])
+        writer.writerow([
+            s.get("order_id", ""),
+            s.get("waybill", ""),
+            s.get("status", ""),
+            s["receiver"]["name"],
+            s["receiver"]["phone"],
+            s["receiver"]["address"],
+            s["receiver"]["city"],
+            s["receiver"]["state"],
+            s["receiver"]["pincode"],
+            s["sender"]["name"],
+            s["sender"]["city"],
+            items_str,
+            s.get("weight", 0),
+            s.get("payment_mode", ""),
+            s.get("cod_amount", 0),
+            total_amount,
+            s.get("created_at", "")
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="shipments_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'}
+    )
+
+@api_router.get("/shipments/bulk/labels")
+async def bulk_download_labels(waybills: str = Query(..., description="Comma-separated waybill numbers")):
+    """Download multiple shipping labels as a single PDF (combined)"""
+    waybill_list = [w.strip() for w in waybills.split(",") if w.strip()]
+    
+    if not waybill_list:
+        raise HTTPException(status_code=400, detail="No waybills provided")
+    
+    # Delhivery supports comma-separated waybills in a single request
+    url = f"{DELHIVERY_BASE_URL}/p/packing_slip"
+    params = {"wbns": ",".join(waybill_list), "pdf": "true"}
+    headers = {"Authorization": f"Token {DELHIVERY_API_KEY}"}
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as http_client:
+            response = await http_client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="bulk_labels_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'}
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"Bulk label download error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download labels: {str(e)}")
+
+# Helper for bulk upload
+async def _create_shipment_internal(order: CreateShipmentRequest) -> Shipment:
+    """Internal helper to create a shipment"""
+    delhivery_response = await create_delhivery_shipment(order)
+    
+    waybill = None
+    if delhivery_response.get("packages"):
+        waybill = delhivery_response["packages"][0].get("waybill")
+    
+    shipment = Shipment(
+        order_id=order.order_id,
+        waybill=waybill,
+        pickup_location=order.pickup_location,
+        sender=order.sender,
+        receiver=order.receiver,
+        items=order.items,
+        payment_mode=order.payment_mode,
+        cod_amount=order.cod_amount,
+        weight=order.weight,
+        length=order.length,
+        breadth=order.breadth,
+        height=order.height,
+        status=ShipmentStatus.MANIFESTED if waybill else ShipmentStatus.PENDING,
+        delhivery_response=delhivery_response
+    )
+    
+    doc = shipment.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    doc['updated_at'] = doc['updated_at'].isoformat()
+    await db.shipments.insert_one(doc)
+    
+    return shipment
 
 # Include router
 app.include_router(api_router)

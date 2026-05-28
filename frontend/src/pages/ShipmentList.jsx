@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -10,6 +13,7 @@ export const ShipmentList = () => {
   const [shipments, setShipments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchShipments();
@@ -24,6 +28,28 @@ export const ShipmentList = () => {
       console.error("Failed to fetch shipments", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const url = filter === "all" 
+        ? `${API}/shipments/bulk/download`
+        : `${API}/shipments/bulk/download?status=${filter}`;
+      const response = await axios.get(url, { responseType: "blob" });
+      const blob = new Blob([response.data], { type: "text/csv" });
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `shipments_${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("Shipments exported successfully");
+    } catch (error) {
+      toast.error("Failed to export shipments");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -45,20 +71,31 @@ export const ShipmentList = () => {
           <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="shipments-title">All Shipments</h1>
           <p className="text-zinc-500">View and manage all your shipments</p>
         </div>
-        <div className="w-64">
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger data-testid="status-filter-select" className="bg-white border-zinc-200 rounded-sm">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Shipments</SelectItem>
-              <SelectItem value="Pending">Pending</SelectItem>
-              <SelectItem value="Manifested">Manifested</SelectItem>
-              <SelectItem value="In Transit">In Transit</SelectItem>
-              <SelectItem value="Delivered">Delivered</SelectItem>
-              <SelectItem value="Exception">Exception</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex gap-3 items-center">
+          <Button
+            onClick={handleExport}
+            disabled={exporting || shipments.length === 0}
+            data-testid="export-shipments-btn"
+            className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-sm"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {exporting ? "Exporting..." : "Export CSV"}
+          </Button>
+          <div className="w-64">
+            <Select value={filter} onValueChange={setFilter}>
+              <SelectTrigger data-testid="status-filter-select" className="bg-white border-zinc-200 rounded-sm">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Shipments</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Manifested">Manifested</SelectItem>
+                <SelectItem value="In Transit">In Transit</SelectItem>
+                <SelectItem value="Delivered">Delivered</SelectItem>
+                <SelectItem value="Exception">Exception</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -66,11 +103,6 @@ export const ShipmentList = () => {
         <div className="text-zinc-500" data-testid="shipments-loading">Loading shipments...</div>
       ) : shipments.length === 0 ? (
         <div className="border border-zinc-200 rounded-sm bg-white p-12 text-center" data-testid="empty-shipments-list">
-          <img
-            src="https://static.prod-images.emergentagent.com/jobs/9f4b3913-0e32-441f-a344-b5a13d5980ad/images/d3716dc3e0b8a4a4abfbdec8bcecc73e98fa16470f0502f3a683c38902e36d0e.png"
-            alt="No shipments"
-            className="max-w-[200px] mx-auto mb-6 opacity-60"
-          />
           <p className="text-zinc-500 mb-4">No shipments found</p>
           <Link
             to="/create-shipment"

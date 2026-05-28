@@ -60,12 +60,35 @@ export const ShipmentDetail = () => {
     }
 
     try {
-      const response = await axios.get(`${API}/shipments/${id}/label`);
-      window.open(response.data.label_url, "_blank");
-      toast.success("Opening shipping label");
+      const response = await axios.get(`${API}/shipments/${id}/label`, {
+        responseType: "blob",
+      });
+      
+      // Check if it's a PDF
+      const contentType = response.headers["content-type"] || "";
+      if (contentType.includes("pdf")) {
+        const blob = new Blob([response.data], { type: "application/pdf" });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `label_${shipment.waybill}.pdf`;
+        link.click();
+        window.URL.revokeObjectURL(url);
+        toast.success("Label downloaded");
+      } else {
+        // If JSON response, try to open in new tab
+        const text = await response.data.text();
+        const data = JSON.parse(text);
+        if (data.packages && data.packages[0]?.pdf_download_link) {
+          window.open(data.packages[0].pdf_download_link, "_blank");
+          toast.success("Opening label");
+        } else {
+          toast.error("Label format not supported. Check Delhivery portal.");
+        }
+      }
     } catch (error) {
       console.error("Failed to get label", error);
-      toast.error("Failed to generate shipping label");
+      toast.error(error.response?.data?.detail || "Failed to generate shipping label");
     }
   };
 

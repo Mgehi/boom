@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -40,6 +40,26 @@ export const CreateShipment = () => {
     breadth: 10,
     height: 10,
   });
+
+  // Auto-load default sender from settings
+  useEffect(() => {
+    axios.get(`${API}/settings`).then((res) => {
+      const s = res.data;
+      if (s?.sender_name) {
+        setFormData((prev) => ({
+          ...prev,
+          pickup_location: s.pickup_location || "",
+          sender_name: s.sender_name || "",
+          sender_phone: s.sender_phone || "",
+          sender_email: s.sender_email || "",
+          sender_address: s.sender_address || "",
+          sender_city: s.sender_city || "",
+          sender_state: s.sender_state || "",
+          sender_pincode: s.sender_pincode || "",
+        }));
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

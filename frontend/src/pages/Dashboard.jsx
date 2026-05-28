@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { Package, TrendingUp, Truck, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
+import PincodeChecker from "@/components/PincodeChecker";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -90,62 +91,64 @@ export const Dashboard = () => {
         })}
       </div>
 
-      {/* Recent Shipments */}
-      <div className="border border-zinc-200 rounded-sm bg-white">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-xl font-bold tracking-tight" data-testid="recent-shipments-title">Recent Shipments</h2>
-        </div>
-        
-        {recentShipments.length === 0 ? (
-          <div className="p-12 text-center" data-testid="empty-shipments">
-            <img
-              src="https://static.prod-images.emergentagent.com/jobs/9f4b3913-0e32-441f-a344-b5a13d5980ad/images/d3716dc3e0b8a4a4abfbdec8bcecc73e98fa16470f0502f3a683c38902e36d0e.png"
-              alt="No shipments"
-              className="max-w-[200px] mx-auto mb-6 opacity-60"
-            />
-            <p className="text-zinc-500 mb-4">No shipments found</p>
-            <Link
-              to="/create-shipment"
-              data-testid="create-first-shipment-btn"
-              className="inline-flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-sm font-medium hover:bg-red-700 transition-colors"
-            >
-              Create Your First Shipment
-            </Link>
+      {/* Two column layout: Recent Shipments + Pincode Checker */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Shipments */}
+        <div className="lg:col-span-2 border border-zinc-200 rounded-sm bg-white">
+          <div className="p-6 border-b border-zinc-200">
+            <h2 className="text-xl font-bold tracking-tight" data-testid="recent-shipments-title">Recent Shipments</h2>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#FAFAFA]">
-                <tr className="border-b border-zinc-200">
-                  <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Order ID</th>
-                  <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Waybill</th>
-                  <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Receiver</th>
-                  <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Status</th>
-                  <th className="px-6 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentShipments.map((shipment) => (
-                  <tr key={shipment.id} className="border-b border-zinc-200 hover:bg-zinc-50" data-testid={`shipment-row-${shipment.id}`}>
-                    <td className="px-6 py-4">
-                      <Link to={`/shipments/${shipment.id}`} className="mono font-medium text-zinc-900 hover:text-red-600" data-testid={`shipment-order-id-${shipment.order_id}`}>
-                        {shipment.order_id}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-4 mono text-zinc-600" data-testid={`shipment-waybill-${shipment.waybill}`}>{shipment.waybill || "N/A"}</td>
-                    <td className="px-6 py-4 text-zinc-900">{shipment.receiver.name}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-sm text-xs font-medium border ${getStatusClass(shipment.status)}`} data-testid={`shipment-status-${shipment.status}`}>
-                        {shipment.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-zinc-600">{new Date(shipment.created_at).toLocaleDateString()}</td>
+          
+          {recentShipments.length === 0 ? (
+            <div className="p-12 text-center" data-testid="empty-shipments">
+              <Package className="w-16 h-16 text-zinc-300 mx-auto mb-4" />
+              <p className="text-zinc-500 mb-4">No shipments found</p>
+              <Link
+                to="/create-shipment"
+                data-testid="create-first-shipment-btn"
+                className="inline-flex items-center gap-2 bg-red-600 text-white px-6 py-3 rounded-sm font-medium hover:bg-red-700 transition-colors"
+              >
+                Create Your First Shipment
+              </Link>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#FAFAFA]">
+                  <tr className="border-b border-zinc-200">
+                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Order</th>
+                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Waybill</th>
+                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Receiver</th>
+                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {recentShipments.map((shipment) => (
+                    <tr key={shipment.id} className="border-b border-zinc-200 hover:bg-zinc-50" data-testid={`shipment-row-${shipment.id}`}>
+                      <td className="px-4 py-4">
+                        <Link to={`/shipments/${shipment.id}`} className="mono font-medium text-zinc-900 hover:text-red-600">
+                          {shipment.order_id}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-4 mono text-zinc-600 text-xs">{shipment.waybill || "N/A"}</td>
+                      <td className="px-4 py-4 text-zinc-900">{shipment.receiver.name}</td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-medium border ${getStatusClass(shipment.status)}`}>
+                          {shipment.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Pincode Checker Widget */}
+        <div className="lg:col-span-1">
+          <PincodeChecker />
+        </div>
       </div>
     </div>
   );

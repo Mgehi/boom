@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { Package, Plus, List, Calendar, Settings as SettingsIcon } from "lucide-react";
+import { Package, Plus, List, Calendar, Settings as SettingsIcon, Upload } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 
 export const Layout = () => {
@@ -14,6 +14,7 @@ export const Layout = () => {
   const navItems = [
     { path: "/", icon: Package, label: "Dashboard" },
     { path: "/create-shipment", icon: Plus, label: "Create Shipment" },
+    { path: "/bulk-upload", icon: Upload, label: "Bulk Upload" },
     { path: "/shipments", icon: List, label: "Shipments" },
     { path: "/pickup", icon: Calendar, label: "Schedule Pickup" },
     { path: "/settings", icon: SettingsIcon, label: "Settings" },
