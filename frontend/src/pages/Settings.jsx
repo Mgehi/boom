@@ -72,13 +72,13 @@ export const Settings = () => {
 
   const handleRegisterWarehouse = async () => {
     if (!settings.pickup_location || !settings.sender_address || !settings.sender_pincode) {
-      toast.error("Please fill in pickup location and sender address first");
+      toast.error("Please fill in pickup location, address, and pincode first, then save settings");
       return;
     }
 
     setRegistering(true);
     try {
-      await axios.post(`${API}/warehouse/register`, {
+      const response = await axios.post(`${API}/warehouse/register`, {
         name: settings.pickup_location,
         email: settings.sender_email || "support@business.com",
         phone: settings.sender_phone,
@@ -87,14 +87,16 @@ export const Settings = () => {
         state: settings.sender_state,
         country: "India",
         pin: settings.sender_pincode,
-        return_address: settings.sender_address,
-        return_pin: settings.sender_pincode,
-        return_city: settings.sender_city,
-        return_state: settings.sender_state,
       });
-      toast.success("Warehouse registered with Delhivery successfully");
+      toast.success(response.data?.message || "Warehouse registered successfully with Delhivery");
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to register warehouse. It may already be registered.");
+      const errorMsg = error.response?.data?.detail || "Failed to register warehouse";
+      // If warehouse already exists, that's actually OK
+      if (errorMsg.toLowerCase().includes("already") || errorMsg.toLowerCase().includes("exist")) {
+        toast.info("This warehouse is already registered with Delhivery");
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setRegistering(false);
     }
@@ -227,25 +229,30 @@ export const Settings = () => {
             </div>
           </div>
 
-          <div className="mt-6 flex gap-3">
-            <Button
-              type="submit"
-              disabled={saving}
-              data-testid="save-settings-btn"
-              className="bg-red-600 text-white hover:bg-red-700 rounded-sm"
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {saving ? "Saving..." : "Save Settings"}
-            </Button>
-            <Button
-              type="button"
-              onClick={handleRegisterWarehouse}
-              disabled={registering}
-              data-testid="register-warehouse-btn"
-              className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-sm"
-            >
-              {registering ? "Registering..." : "Register Warehouse with Delhivery"}
-            </Button>
+          <div className="mt-6 flex flex-col gap-3">
+            <div className="bg-zinc-50 border border-zinc-200 p-3 rounded-sm text-xs text-zinc-600">
+              <strong className="text-zinc-900">Important:</strong> Before creating shipments, register your pickup warehouse with Delhivery. Save your settings first, then click "Register Warehouse with Delhivery". The warehouse name above must match exactly when creating shipments.
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="submit"
+                disabled={saving}
+                data-testid="save-settings-btn"
+                className="bg-red-600 text-white hover:bg-red-700 rounded-sm"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? "Saving..." : "Save Settings"}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRegisterWarehouse}
+                disabled={registering}
+                data-testid="register-warehouse-btn"
+                className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-sm"
+              >
+                {registering ? "Registering..." : "Register Warehouse with Delhivery"}
+              </Button>
+            </div>
           </div>
         </form>
 

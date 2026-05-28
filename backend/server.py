@@ -165,6 +165,8 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
     url = f"{DELHIVERY_BASE_URL}/cmu/create.json"
     
     # Prepare Delhivery payload
+    # pickup_location must only contain the warehouse name (must be pre-registered in Delhivery)
+    # Extra fields cause "ClientWarehouse matching query does not exist." errors
     shipment_payload = {
         "shipments": [{
             "name": shipment_data.receiver.name,
@@ -200,12 +202,7 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
             "address_type": "home"
         }],
         "pickup_location": {
-            "name": shipment_data.pickup_location,
-            "add": shipment_data.sender.address,
-            "city": shipment_data.sender.city,
-            "pin_code": shipment_data.sender.pincode,
-            "country": shipment_data.sender.country,
-            "phone": shipment_data.sender.phone
+            "name": shipment_data.pickup_location
         }
     }
     
@@ -262,33 +259,41 @@ async def track_delhivery_shipment(waybill: str) -> Dict[str, Any]:
 
 async def schedule_delhivery_pickup(pickup_data: PickupRequest) -> Dict[str, Any]:
     """Schedule pickup with Delhivery"""
-    url = f"{DELHIVERY_BASE_URL}/fm/request/new/"
+    # Pickup endpoint does NOT include /api prefix and uses JSON (not form-encoded)
+    base = DELHIVERY_BASE_URL.replace("/api", "")
+    url = f"{base}/fm/request/new/"
     
     headers = {
-        "Authorization": f"Token {DELHIVERY_API_KEY}"
+        "Authorization": f"Token {DELHIVERY_API_KEY}",
+        "Content-Type": "application/json"
     }
     
-    # Form-encoded data for Delhivery
-    form_data = {
+    payload = {
         "pickup_location": pickup_data.pickup_location,
         "pickup_date": pickup_data.pickup_date,
-        "pickup_time": pickup_data.pickup_time,
-        "expected_package_count": str(pickup_data.expected_package_count)
+        "pickup_time": pickup_data.pickup_time or "10:00:00",
+        "expected_package_count": pickup_data.expected_package_count
     }
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, data=form_data, headers=headers)
-            response.raise_for_status()
-            result = response.json()
+            response = await client.post(url, json=payload, headers=headers)
             
-            # Check if Delhivery accepted the pickup request
-            if not result.get("success", False):
-                error_msg = result.get("error", "Delhivery rejected the pickup request")
-                logger.error(f"Delhivery pickup API error: {error_msg}")
-                raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
-            
-            return result
+            if response.status_code in [200, 201]:
+                result = response.json()
+                # Delhivery returns pickup_id on success
+                if result.get("pickup_id"):
+                    logger.info(f"Pickup scheduled successfully: {result.get('pickup_id')}")
+                    return result
+                else:
+                    # No pickup_id means error
+                    error_msg = result.get("error", result.get("detail", "Pickup scheduling failed"))
+                    raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
+            else:
+                error_text = response.text[:300]
+                raise HTTPException(status_code=400, detail=f"Delhivery error: {error_text}")
+    except HTTPException:
+        raise
     except httpx.HTTPError as e:
         logger.error(f"Pickup scheduling error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Pickup scheduling error: {str(e)}")
@@ -420,7 +425,7 @@ async def get_shipment_label(shipment_id: str):
     if not shipment.get("waybill"):
         raise HTTPException(status_code=400, detail="No waybill found for this shipment")
     
-    # Fetch label PDF from Delhivery
+    # Step 1: Get the PDF download link from Delhivery
     url = f"{DELHIVERY_BASE_URL}/p/packing_slip"
     params = {"wbns": shipment["waybill"], "pdf": "true"}
     headers = {"Authorization": f"Token {DELHIVERY_API_KEY}"}
@@ -429,29 +434,27 @@ async def get_shipment_label(shipment_id: str):
         async with httpx.AsyncClient(timeout=30.0) as http_client:
             response = await http_client.get(url, params=params, headers=headers)
             response.raise_for_status()
+            data = response.json()
             
-            content_type = response.headers.get("content-type", "")
+            packages = data.get("packages", [])
+            if not packages:
+                raise HTTPException(status_code=404, detail="No label found for this waybill")
             
-            # If PDF is returned directly
-            if "application/pdf" in content_type:
-                return StreamingResponse(
-                    io.BytesIO(response.content),
-                    media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="label_{shipment["waybill"]}.pdf"'}
-                )
+            pdf_link = packages[0].get("pdf_download_link")
+            if not pdf_link:
+                raise HTTPException(status_code=404, detail="PDF download link not available")
             
-            # If JSON response with packages array (Delhivery returns HTML or JSON)
-            if "application/json" in content_type:
-                data = response.json()
-                # Delhivery returns label info in packages array
-                return data
+            # Step 2: Fetch the actual PDF from the signed URL
+            pdf_response = await http_client.get(pdf_link)
+            pdf_response.raise_for_status()
             
-            # Fallback: return raw content as PDF
             return StreamingResponse(
-                io.BytesIO(response.content),
-                media_type=content_type or "application/pdf",
+                io.BytesIO(pdf_response.content),
+                media_type="application/pdf",
                 headers={"Content-Disposition": f'attachment; filename="label_{shipment["waybill"]}.pdf"'}
             )
+    except HTTPException:
+        raise
     except httpx.HTTPError as e:
         logger.error(f"Label download error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to download label: {str(e)}")
@@ -595,21 +598,71 @@ async def register_warehouse(warehouse: WarehouseRegistration):
         "Content-Type": "application/json"
     }
     
-    payload = warehouse.model_dump(exclude_none=True)
+    # Build payload - return fields are required by Delhivery; auto-fill from main address
+    payload = {
+        "name": warehouse.name,
+        "email": warehouse.email,
+        "phone": warehouse.phone,
+        "address": warehouse.address,
+        "city": warehouse.city,
+        "country": warehouse.country,
+        "pin": warehouse.pin,
+        "return_address": warehouse.return_address or warehouse.address,
+        "return_pin": warehouse.return_pin or warehouse.pin,
+        "return_city": warehouse.return_city or warehouse.city,
+        "return_state": warehouse.return_state or warehouse.state,
+        "return_country": warehouse.country,
+    }
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as http_client:
             response = await http_client.post(url, json=payload, headers=headers)
-            result = response.json() if response.content else {}
+            response_text = response.text
+            response_lower = response_text.lower()
             
-            if response.status_code in [200, 201]:
+            # Delhivery returns XML for warehouse endpoints
+            # Success: "<message>A new client warehouse has been created in HQ(Delhivery).</message>" with <success>True</success>
+            # Failure: "<success>False</success>" with error details
+            
+            is_success = (
+                "<success>true</success>" in response_lower or
+                "warehouse has been created" in response_lower or
+                "successfully" in response_lower
+            )
+            
+            # Warehouse already exists is also a "success" state for our purposes
+            already_exists = "already exists" in response_lower
+            
+            if is_success:
                 logger.info(f"Warehouse {warehouse.name} registered with Delhivery")
-                return {"success": True, "message": "Warehouse registered successfully", "data": result}
+                return {
+                    "success": True,
+                    "message": f"Warehouse '{warehouse.name}' registered successfully with Delhivery",
+                }
+            elif already_exists:
+                logger.info(f"Warehouse {warehouse.name} already exists in Delhivery")
+                return {
+                    "success": True,
+                    "message": f"Warehouse '{warehouse.name}' is already registered with Delhivery and ready to use",
+                    "already_exists": True
+                }
             else:
-                error_msg = result.get("error", result.get("data", "Registration failed"))
-                raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
+                # Extract a clean error from the XML response
+                import re
+                error_match = re.search(r"<message>(.*?)</message>", response_text)
+                error_msg = error_match.group(1) if error_match else response_text[:300]
+                logger.error(f"Warehouse registration failed: {response_text[:500]}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Delhivery rejected: {error_msg}"
+                )
+    except HTTPException:
+        raise
     except httpx.HTTPError as e:
         logger.error(f"Warehouse registration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to register warehouse: {str(e)}")
+    except Exception as e:
+        logger.error(f"Warehouse registration unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to register warehouse: {str(e)}")
 
 # ============ Bulk Shipment Upload (CSV) ============
@@ -764,7 +817,7 @@ async def bulk_download_labels(waybills: str = Query(..., description="Comma-sep
     if not waybill_list:
         raise HTTPException(status_code=400, detail="No waybills provided")
     
-    # Delhivery supports comma-separated waybills in a single request
+    # Delhivery supports comma-separated waybills, returns JSON with PDF links per package
     url = f"{DELHIVERY_BASE_URL}/p/packing_slip"
     params = {"wbns": ",".join(waybill_list), "pdf": "true"}
     headers = {"Authorization": f"Token {DELHIVERY_API_KEY}"}
@@ -773,12 +826,31 @@ async def bulk_download_labels(waybills: str = Query(..., description="Comma-sep
         async with httpx.AsyncClient(timeout=60.0) as http_client:
             response = await http_client.get(url, params=params, headers=headers)
             response.raise_for_status()
+            data = response.json()
             
+            packages = data.get("packages", [])
+            if not packages:
+                raise HTTPException(status_code=404, detail="No labels found for the given waybills")
+            
+            # Fetch all PDFs and combine them into a ZIP for download
+            output_zip = io.BytesIO()
+            with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                for pkg in packages:
+                    pdf_link = pkg.get("pdf_download_link")
+                    waybill = pkg.get("wbn", "unknown")
+                    if pdf_link:
+                        pdf_resp = await http_client.get(pdf_link)
+                        if pdf_resp.status_code == 200:
+                            zf.writestr(f"label_{waybill}.pdf", pdf_resp.content)
+            
+            output_zip.seek(0)
             return StreamingResponse(
-                io.BytesIO(response.content),
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="bulk_labels_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'}
+                output_zip,
+                media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="bulk_labels_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip"'}
             )
+    except HTTPException:
+        raise
     except httpx.HTTPError as e:
         logger.error(f"Bulk label download error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to download labels: {str(e)}")

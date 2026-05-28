@@ -106,14 +106,14 @@ export const BulkUpload = () => {
       const response = await axios.get(`${API}/shipments/bulk/labels?waybills=${waybills}`, {
         responseType: "blob",
       });
-      const blob = new Blob([response.data], { type: "application/pdf" });
+      const blob = new Blob([response.data], { type: "application/zip" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `bulk_labels_${new Date().toISOString().split("T")[0]}.pdf`;
+      link.download = `bulk_labels_${new Date().toISOString().split("T")[0]}.zip`;
       link.click();
       window.URL.revokeObjectURL(url);
-      toast.success("Labels downloaded");
+      toast.success("Labels downloaded as ZIP");
     } catch (error) {
       toast.error("Failed to download labels");
     } finally {
@@ -231,7 +231,7 @@ export const BulkUpload = () => {
               <div className="mb-6 p-4 bg-[#FAFAFA] border border-zinc-200 rounded-sm flex items-center justify-between">
                 <div>
                   <p className="font-medium text-zinc-900">Download All Labels</p>
-                  <p className="text-sm text-zinc-500">Get all {results.success} shipping labels in one PDF</p>
+                  <p className="text-sm text-zinc-500">Get all {results.success} shipping labels as a ZIP file</p>
                 </div>
                 <Button
                   onClick={handleDownloadBulkLabels}
@@ -240,7 +240,7 @@ export const BulkUpload = () => {
                   className="bg-red-600 text-white hover:bg-red-700 rounded-sm"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  {downloadingLabels ? "Downloading..." : "Download Labels PDF"}
+                  {downloadingLabels ? "Downloading..." : "Download Labels ZIP"}
                 </Button>
               </div>
             )}

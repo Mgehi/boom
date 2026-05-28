@@ -1,0 +1,57 @@
+{
+  "summary": "Full regression for Iteration-3 Delhivery API fixes (warehouse register/order create/pickup schedule/label PDF/bulk ZIP/pincode). All 25 backend tests pass including 7 new tests targeting the specific fixes; frontend Settings, SchedulePickup and BulkUpload flows verified live against Delhivery production API with STAYFREE warehouse.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "SchedulePickup", "issues": ["Pickup Date input uses the browser's native date picker (mm/dd/yyyy) instead of the shadcn Calendar/Popover component used elsewhere in shadcn-based UIs. Cosmetic only; functionality works."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_fixes.py",
+    "/app/backend/tests/test_delhivery_api.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/iter3_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Replace native <input type=date> on SchedulePickup with shadcn Calendar/Popover for design consistency.",
+    "(Optional) Surface 'already exists' more clearly in the warehouse register API response (currently returns success=true with a message; UI handles correctly via toast)."
+  ],
+  "critical_code_review_comments": [
+    "create_delhivery_shipment() correctly sends pickup_location with only {name} - matches Delhivery client warehouse lookup contract; root cause of 'ClientWarehouse matching query does not exist' was sending extra fields - now fixed.",
+    "schedule_delhivery_pickup() now POSTs to https://track.delhivery.com/fm/request/new/ (no /api prefix) with JSON body - aligned with Delhivery docs; 404 routing bug resolved.",
+    "get_shipment_label() fetches the actual PDF from Delhivery's pdf_download_link (S3) and streams it back as application/pdf with a proper %PDF header - verified end-to-end on live waybill.",
+    "bulk_download_labels() returns a valid ZIP containing per-waybill PDFs - verified by parsing the ZIP and reading PDF magic bytes.",
+    "Warehouse register handles XML and the 'already exists' case gracefully with success=true.",
+    "server.py is now ~900 lines - consider splitting into modules (routes/, services/delhivery.py, models.py) for maintainability (>700 line threshold).",
+    "All endpoints return JSON without MongoDB _id leakage; URLs and credentials come from env vars (no hardcoding)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3_fixes.py (created)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% of tested flows (Settings save + Register Warehouse, SchedulePickup form, BulkUpload page loads with template/upload UI, Shipments list renders Manifested rows)"},
+  "test_credentials": "Delhivery API key already in backend/.env (e77ef181...). Live API used; STAYFREE warehouse on client GEETA69 FRANCHISE.",
+  "seed_data_creation": "Test created 1 live shipment via /api/orders (TEST_IT3_<timestamp>) using STAYFREE/Indore -> Mumbai. Real waybill issued by Delhivery (numeric, >=10 digits) and persisted in MongoDB; status='Manifested'.",
+  "verified_endpoints": [
+    "GET /api/pincode/check?pincode=452007 -> serviceable=true, state=MP, city=Indore",
+    "POST /api/warehouse/register {name:STAYFREE,...} -> 200 success=true (already exists handled)",
+    "POST /api/orders {pickup_location:STAYFREE,...} -> 200 real waybill, status=Manifested",
+    "GET /api/shipments/{id} -> persisted with waybill + STAYFREE pickup",
+    "GET /api/shipments/{id}/label -> 200 application/pdf, %PDF magic, >1KB",
+    "GET /api/shipments/bulk/labels?waybills=W -> 200 application/zip with .pdf entries",
+    "POST /api/pickups {pickup_location:STAYFREE, pickup_date:+3d, pickup_time:10:00:00} -> 200 (no 404)"
+  ],
+  "verified_frontend_flows": [
+    "Settings: form fill -> Save Settings (success toast) -> Register Warehouse with Delhivery (info toast: 'Warehouse STAYFREE is already registered ... ready to use')",
+    "SchedulePickup: route /pickup loads, pickup_location auto-filled from settings (STAYFREE), pickup_time field absent (per spec), form submits to /api/pickups, form resets indicating success",
+    "BulkUpload: route /bulk-upload loads with 'Download Template', file dropzone, 'Upload & Create Shipments', and 'Export All Shipments' buttons (data-testid='download-template-btn' present)",
+    "Shipments list renders rows incl. Manifested status"
+  ],
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use sender email with valid TLD (e.g. example.com) NOT '.test' - Pydantic EmailStr rejects '.test'. Test data prefix TEST_IT3_. The STAYFREE warehouse on Delhivery client GEETA69 FRANCHISE is confirmed working. /api/orders requires pickup_location to match a registered warehouse name exactly; backend now sends only {name} to Delhivery for pickup_location (fix from this iteration). SchedulePickup route is /pickup (singular), BulkUpload is /bulk-upload."
+}
