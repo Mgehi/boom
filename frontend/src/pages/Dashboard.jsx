@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Package, TrendingUp, Truck, AlertCircle } from "lucide-react";
+import { Package, TrendingUp, Truck, AlertCircle, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import PincodeChecker from "@/components/PincodeChecker";
 
@@ -39,7 +39,8 @@ export const Dashboard = () => {
   };
 
   const statCards = [
-    { label: "Today's Shipments", value: stats.today_shipments, icon: Package, color: "text-zinc-900" },
+    { label: "Total Shipments", value: stats.total_shipments, icon: Package, color: "text-zinc-900" },
+    { label: "Today's Shipments", value: stats.today_shipments, icon: Plus, color: "text-zinc-900" },
     { label: "In Transit", value: stats.in_transit, icon: Truck, color: "text-zinc-600" },
     { label: "Delivered", value: stats.delivered, icon: TrendingUp, color: "text-zinc-900" },
     { label: "Exceptions", value: stats.exceptions, icon: AlertCircle, color: "text-red-600" },
@@ -72,7 +73,7 @@ export const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
         {statCards.map((stat, idx) => {
           const Icon = stat.icon;
           return (

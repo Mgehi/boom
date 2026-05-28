@@ -534,6 +534,8 @@ async def update_settings(settings: BusinessSettings):
     settings.updated_at = datetime.now(timezone.utc)
     doc = settings.model_dump()
     doc['updated_at'] = doc['updated_at'].isoformat()
+    # Keep settings.id stable across updates (singleton)
+    doc['id'] = "default"
     
     await db.settings.update_one(
         {},
