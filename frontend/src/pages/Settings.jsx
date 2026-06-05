@@ -8,10 +8,8 @@ import { Label } from "@/components/ui/label";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
-const API_KEY = "e77ef181577c1ea451b6f6232c55122062441079";
 
 export const Settings = () => {
-  const [copiedKey, setCopiedKey] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [saving, setSaving] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -269,24 +267,6 @@ export const Settings = () => {
             </div>
           </div>
         </form>
-
-        {/* API Key */}
-        <div className="border border-zinc-200 rounded-sm bg-white p-6">
-          <h2 className="text-lg font-bold tracking-tight mb-4">Delhivery API Key</h2>
-          <p className="text-sm text-zinc-500 mb-4">Used to authenticate with Delhivery services.</p>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 bg-[#FAFAFA] border border-zinc-200 rounded-sm p-4">
-              <code className="mono text-sm text-zinc-900" data-testid="api-key-display">{API_KEY}</code>
-            </div>
-            <Button
-              onClick={() => copyToClipboard(API_KEY, setCopiedKey)}
-              data-testid="copy-api-key-btn"
-              className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-sm"
-            >
-              {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            </Button>
-          </div>
-        </div>
 
         {/* Webhook Endpoint */}
         <div className="border border-zinc-200 rounded-sm bg-white p-6">

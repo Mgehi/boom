@@ -945,7 +945,14 @@ async def bulk_download_shipments(status: Optional[ShipmentStatus] = None, curre
     if status:
         query["status"] = status.value
     
-    shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    # Limit to 5000 most recent shipments per export with field projection for performance
+    projection = {
+        "_id": 0,
+        "order_id": 1, "waybill": 1, "status": 1, "shipment_type": 1,
+        "receiver": 1, "sender": 1, "items": 1, "weight": 1,
+        "payment_mode": 1, "cod_amount": 1, "created_at": 1,
+    }
+    shipments = await db.shipments.find(query, projection).sort("created_at", -1).limit(5000).to_list(5000)
     
     output = io.StringIO()
     writer = csv.writer(output)
