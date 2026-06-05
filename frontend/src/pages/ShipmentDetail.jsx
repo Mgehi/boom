@@ -214,7 +214,7 @@ export const ShipmentDetail = () => {
               <div className="grid grid-cols-2 gap-4 pt-3">
                 <div>
                   <p className="text-xs text-zinc-500 mb-1">Weight</p>
-                  <p className="font-medium">{shipment.weight} kg</p>
+                  <p className="font-medium">{Math.round(shipment.weight * 1000)} g</p>
                 </div>
                 <div>
                   <p className="text-xs text-zinc-500 mb-1">Dimensions (L×B×H)</p>

@@ -36,13 +36,12 @@ export const CreateShipment = () => {
     hsn_code: "",
     payment_mode: "Prepaid",
     cod_amount: 0,
-    weight: 0.5,
+    weight_grams: 500,
     length: 10,
     breadth: 10,
     height: 10,
     seller_gst: "",
     seller_invoice: "",
-    shipment_type: "FWD",
   });
 
   // Auto-load default sender from settings
@@ -109,13 +108,13 @@ export const CreateShipment = () => {
         ],
         payment_mode: formData.payment_mode,
         cod_amount: formData.payment_mode === "COD" ? parseFloat(formData.cod_amount) : 0,
-        weight: parseFloat(formData.weight),
+        weight: parseFloat(formData.weight_grams) / 1000,
         length: parseFloat(formData.length),
         breadth: parseFloat(formData.breadth),
         height: parseFloat(formData.height),
         seller_gst: formData.seller_gst || "",
         seller_invoice: formData.seller_invoice || "",
-        shipment_type: formData.shipment_type,
+        shipment_type: "FWD",
       };
 
       const response = await axios.post(`${API}/shipments`, payload);
@@ -141,7 +140,7 @@ export const CreateShipment = () => {
           {/* Order Details */}
           <div className="p-6 border-b border-zinc-200">
             <h2 className="text-lg font-bold tracking-tight mb-4">Order Details</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="order_id" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">Order ID *</Label>
                 <Input
@@ -166,27 +165,7 @@ export const CreateShipment = () => {
                   className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
                 />
               </div>
-              <div>
-                <Label htmlFor="shipment_type" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">Shipment Type *</Label>
-                <Select
-                  value={formData.shipment_type}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, shipment_type: value }))}
-                >
-                  <SelectTrigger data-testid="shipment-type-select" className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FWD">Forward (Warehouse to Customer)</SelectItem>
-                    <SelectItem value="RVP">Reverse (Customer to Warehouse)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
-            {formData.shipment_type === "RVP" && (
-              <div className="mt-3 p-3 bg-zinc-50 border-l-4 border-zinc-900 text-xs text-zinc-700 rounded-sm" data-testid="reverse-shipment-notice">
-                <strong>Reverse Pickup:</strong> Sender = your warehouse, Receiver = customer to pickup from. Delhivery will pick up the package from the customer's address.
-              </div>
-            )}
           </div>
 
           {/* Sender & Receiver in 2-column layout */}
@@ -295,9 +274,9 @@ export const CreateShipment = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
               <div>
-                <Label htmlFor="weight" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">Weight (kg) *</Label>
-                <Input id="weight" name="weight" type="number" step="0.01" min="0.1" value={formData.weight} onChange={handleChange} required data-testid="weight-input" className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm" />
-                <p className="text-xs text-zinc-500 mt-1">e.g., 0.5 = 500 grams</p>
+                <Label htmlFor="weight_grams" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">Weight (g) *</Label>
+                <Input id="weight_grams" name="weight_grams" type="number" step="1" min="1" value={formData.weight_grams} onChange={handleChange} required data-testid="weight-input" className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm" />
+                <p className="text-xs text-zinc-500 mt-1">in grams (e.g., 500)</p>
               </div>
               <div>
                 <Label htmlFor="length" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">Length (cm) *</Label>

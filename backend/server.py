@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Query, UploadFile, File, Request, Response, Cookie, Depends
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import httpx
 from enum import Enum
 import csv
@@ -49,6 +49,20 @@ class ShipmentStatus(str, Enum):
 class PaymentMode(str, Enum):
     COD = "COD"
     PREPAID = "Prepaid"
+
+# ============ User & Auth Models ============
+class User(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class UserSession(BaseModel):
+    user_id: str
+    session_token: str
+    expires_at: datetime
+    created_at: datetime
 
 # Models
 class Address(BaseModel):
@@ -92,6 +106,7 @@ class Shipment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: Optional[str] = None
     order_id: str
     waybill: Optional[str] = None
     pickup_location: str
@@ -123,6 +138,7 @@ class Pickup(BaseModel):
     model_config = ConfigDict(extra="ignore")
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: Optional[str] = None
     pickup_location: str
     pickup_date: str
     pickup_time: str = "10:00:00"
@@ -142,6 +158,7 @@ class BusinessSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: Optional[str] = None
     business_name: str = ""
     sender_name: str = ""
     sender_phone: str = ""
@@ -323,8 +340,134 @@ async def schedule_delhivery_pickup(pickup_data: PickupRequest) -> Dict[str, Any
 async def root():
     return {"message": "Delhivery Logistics Automation API", "status": "running"}
 
+# ============ Auth Endpoints ============
+async def get_current_user(
+    request: Request,
+    session_token: Optional[str] = Cookie(None),
+) -> User:
+    """Get the current authenticated user from cookie or Authorization header."""
+    token = session_token
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    expires_at = session["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    return User(**user_doc)
+
+@api_router.post("/auth/session")
+async def create_session(request: Request, response: Response):
+    """Exchange session_id from Emergent Auth for a session_token cookie."""
+    session_id = request.headers.get("X-Session-ID")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="X-Session-ID header required")
+    
+    # Fetch user data from Emergent Auth
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            auth_resp = await client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id},
+            )
+            auth_resp.raise_for_status()
+            data = auth_resp.json()
+    except httpx.HTTPError as e:
+        logger.error(f"Auth provider error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid session_id")
+    
+    email = data.get("email")
+    name = data.get("name", "")
+    picture = data.get("picture", "")
+    session_token = data.get("session_token")
+    
+    if not email or not session_token:
+        raise HTTPException(status_code=401, detail="Invalid auth response")
+    
+    # Find or create user (by email)
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture}}
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    
+    # Save session (7 days)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    
+    # Set httpOnly cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=7 * 24 * 60 * 60,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
+    
+    return {
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "picture": picture,
+    }
+
+@api_router.get("/auth/me", response_model=User)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Get the current authenticated user."""
+    return current_user
+
+@api_router.post("/auth/logout")
+async def logout(response: Response, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Logout user - delete session and clear cookie."""
+    token = session_token
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    
+    if token:
+        await db.user_sessions.delete_one({"session_token": token})
+    
+    response.delete_cookie(key="session_token", path="/", samesite="none", secure=True)
+    return {"success": True}
+
 @api_router.post("/orders", response_model=Shipment)
-async def receive_order(order: CreateShipmentRequest):
+async def receive_order(order: CreateShipmentRequest, current_user: User = Depends(get_current_user)):
     """Webhook endpoint to receive orders from external website and auto-create shipment"""
     try:
         # Create shipment in Delhivery
@@ -337,6 +480,7 @@ async def receive_order(order: CreateShipmentRequest):
         
         # Create shipment in our database
         shipment = Shipment(
+            user_id=current_user.user_id,
             order_id=order.order_id,
             waybill=waybill,
             pickup_location=order.pickup_location,
@@ -362,31 +506,33 @@ async def receive_order(order: CreateShipmentRequest):
         
         await db.shipments.insert_one(doc)
         
-        logger.info(f"Order {order.order_id} automatically manifested with waybill {waybill}")
+        logger.info(f"Order {order.order_id} for user {current_user.user_id} manifested with waybill {waybill}")
         return shipment
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to process order: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/shipments", response_model=Shipment)
-async def create_shipment_manual(order: CreateShipmentRequest):
+async def create_shipment_manual(order: CreateShipmentRequest, current_user: User = Depends(get_current_user)):
     """Manually create a shipment"""
-    return await receive_order(order)
+    return await receive_order(order, current_user)
 
 @api_router.get("/shipments", response_model=List[Shipment])
 async def get_shipments(
     status: Optional[ShipmentStatus] = None,
-    limit: int = Query(100, le=500)
+    limit: int = Query(100, le=500),
+    current_user: User = Depends(get_current_user)
 ):
-    """Get all shipments with optional status filter"""
-    query = {}
+    """Get all shipments for the current user"""
+    query = {"user_id": current_user.user_id}
     if status:
         query["status"] = status.value
     
     shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     
-    # Convert ISO strings back to datetime
     for shipment in shipments:
         if isinstance(shipment['created_at'], str):
             shipment['created_at'] = datetime.fromisoformat(shipment['created_at'])
@@ -396,9 +542,9 @@ async def get_shipments(
     return shipments
 
 @api_router.get("/shipments/{shipment_id}", response_model=Shipment)
-async def get_shipment(shipment_id: str):
-    """Get shipment by ID"""
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
+async def get_shipment(shipment_id: str, current_user: User = Depends(get_current_user)):
+    """Get shipment by ID (scoped to user)"""
+    shipment = await db.shipments.find_one({"id": shipment_id, "user_id": current_user.user_id}, {"_id": 0})
     
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -411,9 +557,9 @@ async def get_shipment(shipment_id: str):
     return shipment
 
 @api_router.get("/shipments/{shipment_id}/track")
-async def track_shipment(shipment_id: str):
-    """Track shipment using Delhivery API"""
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
+async def track_shipment(shipment_id: str, current_user: User = Depends(get_current_user)):
+    """Track shipment using Delhivery API (scoped to user)"""
+    shipment = await db.shipments.find_one({"id": shipment_id, "user_id": current_user.user_id}, {"_id": 0})
     
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -421,26 +567,19 @@ async def track_shipment(shipment_id: str):
     if not shipment.get("waybill"):
         raise HTTPException(status_code=400, detail="No waybill found for this shipment")
     
-    # Get tracking data from Delhivery
     tracking_data = await track_delhivery_shipment(shipment["waybill"])
     
-    # Update tracking data in database
     await db.shipments.update_one(
-        {"id": shipment_id},
-        {
-            "$set": {
-                "tracking_data": tracking_data,
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-        }
+        {"id": shipment_id, "user_id": current_user.user_id},
+        {"$set": {"tracking_data": tracking_data, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     
     return tracking_data
 
 @api_router.get("/shipments/{shipment_id}/label")
-async def get_shipment_label(shipment_id: str):
+async def get_shipment_label(shipment_id: str, current_user: User = Depends(get_current_user)):
     """Generate and stream waybill label PDF"""
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
+    shipment = await db.shipments.find_one({"id": shipment_id, "user_id": current_user.user_id}, {"_id": 0})
     
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -483,17 +622,16 @@ async def get_shipment_label(shipment_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to download label: {str(e)}")
 
 @api_router.post("/pickups", response_model=Pickup)
-async def schedule_pickup(pickup: PickupRequest):
+async def schedule_pickup(pickup: PickupRequest, current_user: User = Depends(get_current_user)):
     """Schedule a pickup with Delhivery"""
     try:
-        # Schedule pickup with Delhivery
         delhivery_response = await schedule_delhivery_pickup(pickup)
         
-        # Save pickup in database
         pickup_obj = Pickup(
+            user_id=current_user.user_id,
             pickup_location=pickup.pickup_location,
             pickup_date=pickup.pickup_date,
-            pickup_time=pickup.pickup_time,
+            pickup_time=pickup.pickup_time or "10:00:00",
             expected_package_count=pickup.expected_package_count,
             delhivery_response=delhivery_response
         )
@@ -503,17 +641,19 @@ async def schedule_pickup(pickup: PickupRequest):
         
         await db.pickups.insert_one(doc)
         
-        logger.info(f"Pickup scheduled for {pickup.pickup_location} on {pickup.pickup_date}")
+        logger.info(f"Pickup scheduled for user {current_user.user_id}: {pickup.pickup_location} on {pickup.pickup_date}")
         return pickup_obj
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to schedule pickup: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/pickups", response_model=List[Pickup])
-async def get_pickups(limit: int = Query(100, le=500)):
-    """Get all pickups"""
-    pickups = await db.pickups.find({}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+async def get_pickups(limit: int = Query(100, le=500), current_user: User = Depends(get_current_user)):
+    """Get all pickups for the current user"""
+    pickups = await db.pickups.find({"user_id": current_user.user_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     
     for pickup in pickups:
         if isinstance(pickup['created_at'], str):
@@ -522,20 +662,21 @@ async def get_pickups(limit: int = Query(100, le=500)):
     return pickups
 
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats():
-    """Get dashboard statistics"""
-    total = await db.shipments.count_documents({})
+async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
+    """Get dashboard statistics for the current user"""
+    base_query = {"user_id": current_user.user_id}
     
-    # Today's shipments
+    total = await db.shipments.count_documents(base_query)
+    
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     today = await db.shipments.count_documents({
+        **base_query,
         "created_at": {"$gte": today_start.isoformat()}
     })
     
-    # Status counts
-    in_transit = await db.shipments.count_documents({"status": ShipmentStatus.IN_TRANSIT.value})
-    delivered = await db.shipments.count_documents({"status": ShipmentStatus.DELIVERED.value})
-    exceptions = await db.shipments.count_documents({"status": ShipmentStatus.EXCEPTION.value})
+    in_transit = await db.shipments.count_documents({**base_query, "status": ShipmentStatus.IN_TRANSIT.value})
+    delivered = await db.shipments.count_documents({**base_query, "status": ShipmentStatus.DELIVERED.value})
+    exceptions = await db.shipments.count_documents({**base_query, "status": ShipmentStatus.EXCEPTION.value})
     
     return DashboardStats(
         total_shipments=total,
@@ -547,24 +688,24 @@ async def get_dashboard_stats():
 
 # ============ Business Settings (Default Sender) ============
 @api_router.get("/settings")
-async def get_settings():
-    """Get business settings (default sender details)"""
-    settings = await db.settings.find_one({}, {"_id": 0})
+async def get_settings(current_user: User = Depends(get_current_user)):
+    """Get business settings (default sender details) for current user"""
+    settings = await db.settings.find_one({"user_id": current_user.user_id}, {"_id": 0})
     if not settings:
-        return BusinessSettings().model_dump()
+        return BusinessSettings(user_id=current_user.user_id).model_dump()
     return settings
 
 @api_router.put("/settings")
-async def update_settings(settings: BusinessSettings):
-    """Update business settings (default sender details)"""
+async def update_settings(settings: BusinessSettings, current_user: User = Depends(get_current_user)):
+    """Update business settings for current user"""
     settings.updated_at = datetime.now(timezone.utc)
+    settings.user_id = current_user.user_id
     doc = settings.model_dump()
     doc['updated_at'] = doc['updated_at'].isoformat()
-    # Keep settings.id stable across updates (singleton)
-    doc['id'] = "default"
+    doc['id'] = f"settings_{current_user.user_id}"
     
     await db.settings.update_one(
-        {},
+        {"user_id": current_user.user_id},
         {"$set": doc},
         upsert=True
     )
@@ -572,7 +713,7 @@ async def update_settings(settings: BusinessSettings):
 
 # ============ Pincode Serviceability Check ============
 @api_router.get("/pincode/check")
-async def check_pincode_serviceability(pincode: str):
+async def check_pincode_serviceability(pincode: str, current_user: User = Depends(get_current_user)):
     """Check if a pincode is serviceable by Delhivery"""
     # Pincode endpoint uses a different base path
     base = DELHIVERY_BASE_URL.replace("/api", "")
@@ -613,7 +754,7 @@ async def check_pincode_serviceability(pincode: str):
 
 # ============ Warehouse Registration ============
 @api_router.post("/warehouse/register")
-async def register_warehouse(warehouse: WarehouseRegistration):
+async def register_warehouse(warehouse: WarehouseRegistration, current_user: User = Depends(get_current_user)):
     """Register a warehouse/pickup location with Delhivery"""
     url = f"{DELHIVERY_BASE_URL}/backend/clientwarehouse/create/"
     headers = {
@@ -690,12 +831,12 @@ async def register_warehouse(warehouse: WarehouseRegistration):
 
 # ============ Bulk Shipment Upload (CSV) ============
 @api_router.get("/shipments/bulk/template")
-async def download_bulk_template():
-    """Download CSV template for bulk shipment upload"""
-    csv_content = """order_id,receiver_name,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_pincode,item_name,item_qty,item_price,hsn_code,payment_mode,cod_amount,weight,length,breadth,height,shipment_type,invoice_number
-ORD001,John Doe,9876543210,john@example.com,123 Main Street,Mumbai,Maharashtra,400001,Sample Product,1,999.00,6109,Prepaid,0,0.5,10,10,10,FWD,INV001
-ORD002,Jane Smith,9876543211,jane@example.com,456 Park Road,Delhi,Delhi,110001,Electronics Item,2,1499.00,8517,COD,2998.00,1.5,20,15,10,FWD,INV002
-RVP001,Return Customer,9876543212,return@example.com,789 Return Lane,Pune,Maharashtra,411001,Defective Item,1,599.00,6109,Prepaid,0,0.5,10,10,10,RVP,INV003
+async def download_bulk_template(current_user: User = Depends(get_current_user)):
+    """Download CSV template for bulk shipment upload (weight in grams)"""
+    csv_content = """order_id,receiver_name,receiver_phone,receiver_email,receiver_address,receiver_city,receiver_state,receiver_pincode,item_name,item_qty,item_price,hsn_code,payment_mode,cod_amount,weight_grams,length,breadth,height,shipment_type,invoice_number
+ORD001,John Doe,9876543210,john@example.com,123 Main Street,Mumbai,Maharashtra,400001,Sample Product,1,999.00,6109,Prepaid,0,500,10,10,10,FWD,INV001
+ORD002,Jane Smith,9876543211,jane@example.com,456 Park Road,Delhi,Delhi,110001,Electronics Item,2,1499.00,8517,COD,2998.00,1500,20,15,10,FWD,INV002
+RVP001,Return Customer,9876543212,return@example.com,789 Return Lane,Pune,Maharashtra,411001,Defective Item,1,599.00,6109,Prepaid,0,500,10,10,10,RVP,INV003
 """
     return StreamingResponse(
         io.BytesIO(csv_content.encode("utf-8")),
@@ -704,13 +845,13 @@ RVP001,Return Customer,9876543212,return@example.com,789 Return Lane,Pune,Mahara
     )
 
 @api_router.post("/shipments/bulk/upload")
-async def bulk_upload_shipments(file: UploadFile = File(...)):
+async def bulk_upload_shipments(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     """Upload CSV file to create multiple shipments at once"""
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
     
-    # Get default sender settings
-    settings = await db.settings.find_one({}, {"_id": 0})
+    # Get default sender settings for current user
+    settings = await db.settings.find_one({"user_id": current_user.user_id}, {"_id": 0})
     if not settings or not settings.get("sender_name"):
         raise HTTPException(
             status_code=400,
@@ -732,6 +873,14 @@ async def bulk_upload_shipments(file: UploadFile = File(...)):
     for row in reader:
         results["total"] += 1
         try:
+            # Weight: support both new 'weight_grams' (preferred) and legacy 'weight' (kg)
+            if row.get("weight_grams"):
+                weight_kg = float(row["weight_grams"]) / 1000.0
+            elif row.get("weight"):
+                weight_kg = float(row["weight"])
+            else:
+                weight_kg = 0.5
+            
             order = CreateShipmentRequest(
                 order_id=row["order_id"].strip(),
                 pickup_location=settings.get("pickup_location", ""),
@@ -763,7 +912,7 @@ async def bulk_upload_shipments(file: UploadFile = File(...)):
                 )],
                 payment_mode=PaymentMode(row["payment_mode"].strip()),
                 cod_amount=float(row.get("cod_amount", 0) or 0),
-                weight=float(row["weight"]),
+                weight=weight_kg,
                 length=float(row.get("length", 10) or 10),
                 breadth=float(row.get("breadth", 10) or 10),
                 height=float(row.get("height", 10) or 10),
@@ -772,7 +921,7 @@ async def bulk_upload_shipments(file: UploadFile = File(...)):
                 shipment_type=ShipmentType(row.get("shipment_type", "FWD").strip() or "FWD")
             )
             
-            shipment = await _create_shipment_internal(order)
+            shipment = await _create_shipment_internal(order, current_user.user_id)
             results["success"] += 1
             results["shipments"].append({
                 "order_id": shipment.order_id,
@@ -790,9 +939,9 @@ async def bulk_upload_shipments(file: UploadFile = File(...)):
     return results
 
 @api_router.get("/shipments/bulk/download")
-async def bulk_download_shipments(status: Optional[ShipmentStatus] = None):
-    """Download all shipments as a single CSV file"""
-    query = {}
+async def bulk_download_shipments(status: Optional[ShipmentStatus] = None, current_user: User = Depends(get_current_user)):
+    """Download all shipments for current user as a single CSV file"""
+    query = {"user_id": current_user.user_id}
     if status:
         query["status"] = status.value
     
@@ -801,19 +950,21 @@ async def bulk_download_shipments(status: Optional[ShipmentStatus] = None):
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Order ID", "Waybill", "Status", "Receiver Name", "Receiver Phone",
+        "Order ID", "Waybill", "Status", "Type", "Receiver Name", "Receiver Phone",
         "Receiver Address", "Receiver City", "Receiver State", "Receiver Pincode",
-        "Sender Name", "Sender City", "Items", "Weight (kg)", "Payment Mode",
+        "Sender Name", "Sender City", "Items", "Weight (g)", "Payment Mode",
         "COD Amount", "Total Amount", "Created Date"
     ])
     
     for s in shipments:
         items_str = "; ".join([f"{i['name']} (x{i['qty']})" for i in s.get("items", [])])
         total_amount = sum([i["price"] * i["qty"] for i in s.get("items", [])])
+        weight_g = int(s.get("weight", 0) * 1000)
         writer.writerow([
             s.get("order_id", ""),
             s.get("waybill", ""),
             s.get("status", ""),
+            s.get("shipment_type", "FWD"),
             s["receiver"]["name"],
             s["receiver"]["phone"],
             s["receiver"]["address"],
@@ -823,7 +974,7 @@ async def bulk_download_shipments(status: Optional[ShipmentStatus] = None):
             s["sender"]["name"],
             s["sender"]["city"],
             items_str,
-            s.get("weight", 0),
+            weight_g,
             s.get("payment_mode", ""),
             s.get("cod_amount", 0),
             total_amount,
@@ -838,7 +989,7 @@ async def bulk_download_shipments(status: Optional[ShipmentStatus] = None):
     )
 
 @api_router.get("/shipments/bulk/labels")
-async def bulk_download_labels(waybills: str = Query(..., description="Comma-separated waybill numbers")):
+async def bulk_download_labels(waybills: str = Query(..., description="Comma-separated waybill numbers"), current_user: User = Depends(get_current_user)):
     """Download multiple shipping labels as a single PDF (combined)"""
     waybill_list = [w.strip() for w in waybills.split(",") if w.strip()]
     
@@ -884,7 +1035,7 @@ async def bulk_download_labels(waybills: str = Query(..., description="Comma-sep
         raise HTTPException(status_code=500, detail=f"Failed to download labels: {str(e)}")
 
 # Helper for bulk upload
-async def _create_shipment_internal(order: CreateShipmentRequest) -> Shipment:
+async def _create_shipment_internal(order: CreateShipmentRequest, user_id: str) -> Shipment:
     """Internal helper to create a shipment"""
     delhivery_response = await create_delhivery_shipment(order)
     
@@ -893,6 +1044,7 @@ async def _create_shipment_internal(order: CreateShipmentRequest) -> Shipment:
         waybill = delhivery_response["packages"][0].get("waybill")
     
     shipment = Shipment(
+        user_id=user_id,
         order_id=order.order_id,
         waybill=waybill,
         pickup_location=order.pickup_location,
