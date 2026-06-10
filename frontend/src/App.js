@@ -12,6 +12,7 @@ import BulkUpload from "@/pages/BulkUpload";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
+import PublicTracking from "@/pages/PublicTracking";
 import Layout from "@/components/Layout";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -79,6 +80,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/track/:waybill" element={<PublicTracking />} />
       <Route path="/" element={<ProtectedRoute />}>
         <Route index element={<Dashboard />} />
         <Route path="create-shipment" element={<CreateShipment />} />

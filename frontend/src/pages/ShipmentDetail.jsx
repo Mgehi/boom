@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Download, RefreshCw, Package, ArrowLeft } from "lucide-react";
+import { Download, RefreshCw, Package, ArrowLeft, Share2 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -50,6 +50,34 @@ export const ShipmentDetail = () => {
       toast.error("Failed to fetch tracking information");
     } finally {
       setTrackingLoading(false);
+    }
+  };
+
+  const handleShareTracking = async () => {
+    if (!shipment?.waybill) {
+      toast.error("No waybill available");
+      return;
+    }
+    const trackingUrl = `${window.location.origin}/track/${shipment.waybill}`;
+    
+    // Use Web Share API on mobile if available
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Track Order ${shipment.order_id}`,
+          text: `Track your shipment from ${shipment.sender.name}`,
+          url: trackingUrl,
+        });
+        return;
+      } catch (e) { /* user cancelled */ }
+    }
+    
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(trackingUrl);
+      toast.success("Tracking link copied to clipboard!");
+    } catch (e) {
+      toast.error("Could not copy link");
     }
   };
 
@@ -142,6 +170,16 @@ export const ShipmentDetail = () => {
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               {trackingLoading ? "Tracking..." : "Track"}
+            </Button>
+            <Button
+              onClick={handleShareTracking}
+              disabled={!shipment.waybill}
+              data-testid="share-tracking-btn"
+              className="bg-white border border-zinc-300 text-zinc-900 hover:bg-zinc-50 rounded-sm flex-1 sm:flex-initial"
+            >
+              <Share2 className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">Share with Customer</span>
+              <span className="sm:hidden">Share</span>
             </Button>
             <Button
               onClick={handleDownloadLabel}

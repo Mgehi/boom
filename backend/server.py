@@ -340,6 +340,64 @@ async def schedule_delhivery_pickup(pickup_data: PickupRequest) -> Dict[str, Any
 async def root():
     return {"message": "Delhivery Logistics Automation API", "status": "running"}
 
+# ============ Public Tracking (no auth) ============
+@api_router.get("/track/{waybill}")
+async def public_track(waybill: str):
+    """Public tracking endpoint - no auth required. Customer-facing."""
+    # Look up shipment in our DB (across all users) for order_id/receiver context
+    shipment = await db.shipments.find_one(
+        {"waybill": waybill},
+        {"_id": 0, "order_id": 1, "receiver": 1, "shipment_type": 1, "status": 1, "created_at": 1}
+    )
+    
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    
+    # Fetch live tracking from Delhivery
+    try:
+        tracking_data = await track_delhivery_shipment(waybill)
+    except HTTPException:
+        tracking_data = None
+    
+    # Extract scans / status from Delhivery response
+    scans = []
+    current_status = shipment.get("status", "Pending")
+    edd = None  # expected delivery date
+    origin = None
+    destination = None
+    
+    if tracking_data and tracking_data.get("ShipmentData"):
+        sd = tracking_data["ShipmentData"][0].get("Shipment", {})
+        scans_raw = sd.get("Scans", [])
+        for s in scans_raw:
+            d = s.get("ScanDetail", {})
+            scans.append({
+                "status": d.get("Scan", ""),
+                "instructions": d.get("Instructions", ""),
+                "location": d.get("ScannedLocation", ""),
+                "datetime": d.get("ScanDateTime", ""),
+            })
+        # Reverse so newest first
+        scans.reverse()
+        current_status = sd.get("Status", {}).get("Status", current_status)
+        edd = sd.get("ExpectedDeliveryDate") or sd.get("PromisedDeliveryDate")
+        origin = sd.get("Origin", "")
+        destination = sd.get("Destination", "")
+    
+    return {
+        "waybill": waybill,
+        "order_id": shipment.get("order_id"),
+        "receiver_name": shipment["receiver"]["name"],
+        "receiver_city": shipment["receiver"]["city"],
+        "shipment_type": shipment.get("shipment_type", "FWD"),
+        "current_status": current_status,
+        "expected_delivery": edd,
+        "origin": origin,
+        "destination": destination,
+        "scans": scans,
+        "created_at": shipment.get("created_at"),
+    }
+
 # ============ Auth Endpoints ============
 async def get_current_user(
     request: Request,
