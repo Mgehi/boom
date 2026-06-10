@@ -59,9 +59,9 @@ export const SchedulePickup = () => {
   };
 
   return (
-    <div className="p-8" data-testid="schedule-pickup-page">
+    <div className="p-4 lg:p-8" data-testid="schedule-pickup-page">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="schedule-pickup-title">Schedule Pickup</h1>
+        <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="schedule-pickup-title">Schedule Pickup</h1>
         <p className="text-zinc-500">Request a pickup for your shipments</p>
       </div>
 

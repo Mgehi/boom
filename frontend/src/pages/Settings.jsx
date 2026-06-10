@@ -109,9 +109,9 @@ export const Settings = () => {
   };
 
   return (
-    <div className="p-8" data-testid="settings-page">
+    <div className="p-4 lg:p-8" data-testid="settings-page">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="settings-title">Settings</h1>
+        <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="settings-title">Settings</h1>
         <p className="text-zinc-500">Configure your business details and view API integration</p>
       </div>
 

@@ -129,9 +129,9 @@ export const CreateShipment = () => {
   };
 
   return (
-    <div className="p-8" data-testid="create-shipment-page">
+    <div className="p-4 lg:p-8" data-testid="create-shipment-page">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="create-shipment-title">Create Shipment</h1>
+        <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="create-shipment-title">Create Shipment</h1>
         <p className="text-zinc-500">Fill in the details to create a new shipment</p>
       </div>
 

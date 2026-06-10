@@ -120,9 +120,9 @@ export const CreateReverseShipment = () => {
 
   if (!settings) {
     return (
-      <div className="p-8" data-testid="reverse-shipment-no-settings">
+      <div className="p-4 lg:p-8" data-testid="reverse-shipment-no-settings">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold tracking-tight mb-2">Create Reverse Pickup</h1>
+          <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2">Create Reverse Pickup</h1>
           <p className="text-zinc-500">Pick up a package from your customer back to your warehouse</p>
         </div>
         <div className="max-w-3xl border border-zinc-200 rounded-sm bg-white p-8 text-center">
@@ -144,7 +144,7 @@ export const CreateReverseShipment = () => {
   }
 
   return (
-    <div className="p-8" data-testid="create-reverse-shipment-page">
+    <div className="p-4 lg:p-8" data-testid="create-reverse-shipment-page">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <Undo2 className="w-8 h-8 text-zinc-900" />

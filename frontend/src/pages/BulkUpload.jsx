@@ -122,10 +122,10 @@ export const BulkUpload = () => {
   };
 
   return (
-    <div className="p-8" data-testid="bulk-upload-page">
+    <div className="p-4 lg:p-8" data-testid="bulk-upload-page">
       <div className="mb-8 flex items-start justify-between">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="bulk-upload-title">Bulk Shipment Upload</h1>
+          <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="bulk-upload-title">Bulk Shipment Upload</h1>
           <p className="text-zinc-500">Upload multiple shipments at once using CSV</p>
         </div>
         <Button

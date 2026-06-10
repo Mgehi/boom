@@ -105,7 +105,7 @@ export const ShipmentDetail = () => {
 
   if (loading) {
     return (
-      <div className="p-8" data-testid="shipment-detail-loading">
+      <div className="p-4 lg:p-8" data-testid="shipment-detail-loading">
         <div className="text-zinc-500">Loading shipment details...</div>
       </div>
     );
@@ -113,32 +113,32 @@ export const ShipmentDetail = () => {
 
   if (!shipment) {
     return (
-      <div className="p-8" data-testid="shipment-not-found">
+      <div className="p-4 lg:p-8" data-testid="shipment-not-found">
         <div className="text-zinc-500">Shipment not found</div>
       </div>
     );
   }
 
   return (
-    <div className="p-8" data-testid="shipment-detail-page">
+    <div className="p-4 lg:p-8" data-testid="shipment-detail-page">
       <div className="mb-8">
         <Link to="/shipments" className="inline-flex items-center gap-2 text-sm text-zinc-600 hover:text-zinc-900 mb-4" data-testid="back-to-shipments">
           <ArrowLeft className="w-4 h-4" />
           Back to Shipments
         </Link>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="shipment-detail-title">
+            <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="shipment-detail-title">
               Order <span className="mono">{shipment.order_id}</span>
             </h1>
-            <p className="text-zinc-500">Shipment details and tracking information</p>
+            <p className="text-sm lg:text-base text-zinc-500">Shipment details and tracking information</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2 lg:gap-3 flex-wrap">
             <Button
               onClick={handleTrack}
               disabled={trackingLoading || !shipment.waybill}
               data-testid="track-shipment-btn"
-              className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-sm"
+              className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-sm flex-1 sm:flex-initial"
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               {trackingLoading ? "Tracking..." : "Track"}
@@ -147,10 +147,11 @@ export const ShipmentDetail = () => {
               onClick={handleDownloadLabel}
               disabled={!shipment.waybill}
               data-testid="download-label-btn"
-              className="bg-red-600 text-white hover:bg-red-700 rounded-sm"
+              className="bg-red-600 text-white hover:bg-red-700 rounded-sm flex-1 sm:flex-initial"
             >
               <Download className="w-4 h-4 mr-2" />
-              Download Label
+              <span className="hidden sm:inline">Download Label</span>
+              <span className="sm:hidden">Label</span>
             </Button>
           </div>
         </div>

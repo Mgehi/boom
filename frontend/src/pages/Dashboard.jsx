@@ -66,43 +66,43 @@ export const Dashboard = () => {
   }
 
   return (
-    <div className="p-8" data-testid="dashboard">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight mb-2" data-testid="dashboard-title">Dashboard</h1>
-        <p className="text-zinc-500">Monitor your logistics operations</p>
+    <div className="p-4 lg:p-8" data-testid="dashboard">
+      <div className="mb-6 lg:mb-8">
+        <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="dashboard-title">Dashboard</h1>
+        <p className="text-sm lg:text-base text-zinc-500">Monitor your logistics operations</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6 lg:mb-8">
         {statCards.map((stat, idx) => {
           const Icon = stat.icon;
           return (
             <div
               key={idx}
               data-testid={`stat-card-${stat.label.toLowerCase().replace(/[' ]/g, "-")}`}
-              className="border border-zinc-200 rounded-sm p-6 bg-white"
+              className="border border-zinc-200 rounded-sm p-4 lg:p-6 bg-white"
             >
-              <div className="flex items-center justify-between mb-4">
-                <Icon className={`w-5 h-5 ${stat.color}`} />
+              <div className="flex items-center justify-between mb-3 lg:mb-4">
+                <Icon className={`w-4 h-4 lg:w-5 lg:h-5 ${stat.color}`} />
               </div>
-              <div className="text-3xl font-bold tracking-tight mb-1">{stat.value}</div>
-              <div className="text-sm text-zinc-500 uppercase tracking-wider">{stat.label}</div>
+              <div className="text-2xl lg:text-3xl font-bold tracking-tight mb-1">{stat.value}</div>
+              <div className="text-xs lg:text-sm text-zinc-500 uppercase tracking-wider">{stat.label}</div>
             </div>
           );
         })}
       </div>
 
       {/* Two column layout: Recent Shipments + Pincode Checker */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* Recent Shipments */}
-        <div className="lg:col-span-2 border border-zinc-200 rounded-sm bg-white">
-          <div className="p-6 border-b border-zinc-200">
-            <h2 className="text-xl font-bold tracking-tight" data-testid="recent-shipments-title">Recent Shipments</h2>
+        <div className="lg:col-span-2 border border-zinc-200 rounded-sm bg-white order-2 lg:order-1">
+          <div className="p-4 lg:p-6 border-b border-zinc-200">
+            <h2 className="text-lg lg:text-xl font-bold tracking-tight" data-testid="recent-shipments-title">Recent Shipments</h2>
           </div>
           
           {recentShipments.length === 0 ? (
-            <div className="p-12 text-center" data-testid="empty-shipments">
-              <Package className="w-16 h-16 text-zinc-300 mx-auto mb-4" />
+            <div className="p-8 lg:p-12 text-center" data-testid="empty-shipments">
+              <Package className="w-12 h-12 lg:w-16 lg:h-16 text-zinc-300 mx-auto mb-4" />
               <p className="text-zinc-500 mb-4">No shipments found</p>
               <Link
                 to="/create-shipment"
@@ -117,23 +117,23 @@ export const Dashboard = () => {
               <table className="w-full text-sm">
                 <thead className="bg-[#FAFAFA]">
                   <tr className="border-b border-zinc-200">
-                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Order</th>
-                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Waybill</th>
-                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Receiver</th>
-                    <th className="px-4 py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Status</th>
+                    <th className="px-3 lg:px-4 py-3 lg:py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Order</th>
+                    <th className="hidden sm:table-cell px-3 lg:px-4 py-3 lg:py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Waybill</th>
+                    <th className="px-3 lg:px-4 py-3 lg:py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Receiver</th>
+                    <th className="px-3 lg:px-4 py-3 lg:py-4 text-left font-medium uppercase tracking-[0.2em] text-xs text-zinc-500">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentShipments.map((shipment) => (
                     <tr key={shipment.id} className="border-b border-zinc-200 hover:bg-zinc-50" data-testid={`shipment-row-${shipment.id}`}>
-                      <td className="px-4 py-4">
+                      <td className="px-3 lg:px-4 py-3 lg:py-4">
                         <Link to={`/shipments/${shipment.id}`} className="mono font-medium text-zinc-900 hover:text-red-600">
                           {shipment.order_id}
                         </Link>
                       </td>
-                      <td className="px-4 py-4 mono text-zinc-600 text-xs">{shipment.waybill || "N/A"}</td>
-                      <td className="px-4 py-4 text-zinc-900">{shipment.receiver.name}</td>
-                      <td className="px-4 py-4">
+                      <td className="hidden sm:table-cell px-3 lg:px-4 py-3 lg:py-4 mono text-zinc-600 text-xs">{shipment.waybill || "N/A"}</td>
+                      <td className="px-3 lg:px-4 py-3 lg:py-4 text-zinc-900 text-sm">{shipment.receiver.name}</td>
+                      <td className="px-3 lg:px-4 py-3 lg:py-4">
                         <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-medium border ${getStatusClass(shipment.status)}`}>
                           {shipment.status}
                         </span>
@@ -147,7 +147,7 @@ export const Dashboard = () => {
         </div>
 
         {/* Pincode Checker Widget */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 order-1 lg:order-2">
           <PincodeChecker />
         </div>
       </div>
