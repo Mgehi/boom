@@ -10,6 +10,7 @@ import ShipmentDetail from "@/pages/ShipmentDetail";
 import SchedulePickup from "@/pages/SchedulePickup";
 import BulkUpload from "@/pages/BulkUpload";
 import Settings from "@/pages/Settings";
+import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import PublicTracking from "@/pages/PublicTracking";
@@ -90,6 +91,7 @@ function AppRouter() {
         <Route path="shipments/:id" element={<ShipmentDetail />} />
         <Route path="pickup" element={<SchedulePickup />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>
   );

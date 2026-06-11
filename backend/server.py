@@ -56,6 +56,7 @@ class User(BaseModel):
     email: str
     name: str
     picture: Optional[str] = None
+    is_admin: bool = False
     created_at: Optional[datetime] = None
 
 class UserSession(BaseModel):
@@ -63,6 +64,15 @@ class UserSession(BaseModel):
     session_token: str
     expires_at: datetime
     created_at: datetime
+
+class AllowedEmail(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    email: str
+    note: Optional[str] = ""
+    added_by: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Models
 class Address(BaseModel):
@@ -459,21 +469,56 @@ async def create_session(request: Request, response: Response):
     if not email or not session_token:
         raise HTTPException(status_code=401, detail="Invalid auth response")
     
-    # Find or create user (by email)
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    email_lower = email.lower().strip()
+    
+    # Check if any admin exists
+    admin_exists = await db.users.find_one({"is_admin": True})
+    
+    # Find existing user
+    existing = await db.users.find_one({"email": email_lower}, {"_id": 0})
+    
     if existing:
+        # Existing user - just refresh session
         user_id = existing["user_id"]
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": name, "picture": picture}}
-        )
+        is_admin = existing.get("is_admin", False)
+        
+        # First sign-in: promote first user to admin (bootstrap)
+        if not admin_exists and not is_admin:
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {"is_admin": True, "name": name, "picture": picture}}
+            )
+            is_admin = True
+            logger.info(f"Bootstrap: promoted {email_lower} to admin (first user)")
+        else:
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {"name": name, "picture": picture}}
+            )
     else:
+        # New user - check if allowed
+        is_admin = False
+        if not admin_exists:
+            # Bootstrap: no admin yet → this user becomes admin
+            is_admin = True
+            logger.info(f"Bootstrap: making {email_lower} the first admin")
+        else:
+            # Admin exists - check whitelist
+            allowed = await db.allowed_emails.find_one({"email": email_lower})
+            if not allowed:
+                logger.warning(f"Access denied for unwhitelisted email: {email_lower}")
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied. The email '{email}' is not authorized to use this dashboard. Please contact your administrator."
+                )
+        
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
             "user_id": user_id,
-            "email": email,
+            "email": email_lower,
             "name": name,
             "picture": picture,
+            "is_admin": is_admin,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
     
@@ -499,9 +544,10 @@ async def create_session(request: Request, response: Response):
     
     return {
         "user_id": user_id,
-        "email": email,
+        "email": email_lower,
         "name": name,
         "picture": picture,
+        "is_admin": is_admin,
     }
 
 @api_router.get("/auth/me", response_model=User)
@@ -523,6 +569,86 @@ async def logout(response: Response, request: Request, session_token: Optional[s
     
     response.delete_cookie(key="session_token", path="/", samesite="none", secure=True)
     return {"success": True}
+
+# ============ Admin Endpoints (Email Whitelist Management) ============
+async def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """Require admin privileges."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+class AddAllowedEmailRequest(BaseModel):
+    email: str
+    note: Optional[str] = ""
+
+@api_router.get("/admin/allowed-emails")
+async def list_allowed_emails(admin: User = Depends(get_admin_user)):
+    """List all whitelisted client emails (admin only)."""
+    emails = await db.allowed_emails.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    for e in emails:
+        if isinstance(e.get("created_at"), str):
+            e["created_at"] = datetime.fromisoformat(e["created_at"])
+    return emails
+
+@api_router.post("/admin/allowed-emails")
+async def add_allowed_email(payload: AddAllowedEmailRequest, admin: User = Depends(get_admin_user)):
+    """Add an email to the whitelist (admin only)."""
+    email_lower = payload.email.lower().strip()
+    if not email_lower or "@" not in email_lower:
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    
+    existing = await db.allowed_emails.find_one({"email": email_lower})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"{email_lower} is already on the whitelist")
+    
+    entry = AllowedEmail(email=email_lower, note=payload.note or "", added_by=admin.user_id)
+    doc = entry.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.allowed_emails.insert_one(doc)
+    
+    logger.info(f"Admin {admin.email} added {email_lower} to whitelist")
+    return entry
+
+@api_router.delete("/admin/allowed-emails/{entry_id}")
+async def remove_allowed_email(entry_id: str, admin: User = Depends(get_admin_user)):
+    """Remove an email from the whitelist (admin only). User must re-add the email to allow access again."""
+    result = await db.allowed_emails.delete_one({"id": entry_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Whitelist entry not found")
+    
+    logger.info(f"Admin {admin.email} removed entry {entry_id} from whitelist")
+    return {"success": True}
+
+@api_router.get("/admin/users")
+async def list_registered_users(admin: User = Depends(get_admin_user)):
+    """List all registered users with their last activity (admin only)."""
+    users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Add shipment counts per user
+    for u in users:
+        u["shipment_count"] = await db.shipments.count_documents({"user_id": u["user_id"]})
+    
+    return users
+
+@api_router.delete("/admin/users/{user_id}")
+async def revoke_user(user_id: str, admin: User = Depends(get_admin_user)):
+    """Revoke a user's access (delete user + sessions). Their email must also be removed from the whitelist to fully block them."""
+    if user_id == admin.user_id:
+        raise HTTPException(status_code=400, detail="You cannot revoke your own access")
+    
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.get("is_admin"):
+        raise HTTPException(status_code=400, detail="Cannot revoke another admin")
+    
+    # Delete user account + active sessions
+    await db.users.delete_one({"user_id": user_id})
+    await db.user_sessions.delete_many({"user_id": user_id})
+    
+    logger.info(f"Admin {admin.email} revoked user {user.get('email')}")
+    return {"success": True, "message": f"User {user.get('email')} has been signed out. Remove their email from the whitelist to prevent re-signup."}
 
 @api_router.post("/orders", response_model=Shipment)
 async def receive_order(order: CreateShipmentRequest, current_user: User = Depends(get_current_user)):

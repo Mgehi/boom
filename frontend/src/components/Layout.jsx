@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { Package, Plus, List, Calendar, Settings as SettingsIcon, Upload, Undo2, LogOut, Menu, X } from "lucide-react";
+import { Package, Plus, List, Calendar, Settings as SettingsIcon, Upload, Undo2, LogOut, Menu, X, Shield } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import axios from "axios";
 
@@ -31,6 +31,7 @@ export const Layout = ({ user }) => {
     { path: "/bulk-upload", icon: Upload, label: "Bulk Upload" },
     { path: "/pickup", icon: Calendar, label: "Schedule Pickup" },
     { path: "/settings", icon: SettingsIcon, label: "Settings" },
+    ...(user?.is_admin ? [{ path: "/admin", icon: Shield, label: "Admin" }] : []),
   ];
   
   const handleLogout = async () => {
