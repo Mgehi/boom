@@ -106,14 +106,14 @@ export const BulkUpload = () => {
       const response = await axios.get(`${API}/shipments/bulk/labels?waybills=${waybills}`, {
         responseType: "blob",
       });
-      const blob = new Blob([response.data], { type: "application/zip" });
+      const blob = new Blob([response.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `bulk_labels_${new Date().toISOString().split("T")[0]}.zip`;
+      link.download = `bulk_labels_${new Date().toISOString().split("T")[0]}.pdf`;
       link.click();
       window.URL.revokeObjectURL(url);
-      toast.success("Labels downloaded as ZIP");
+      toast.success("Labels downloaded as PDF");
     } catch (error) {
       toast.error("Failed to download labels");
     } finally {

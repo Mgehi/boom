@@ -14,7 +14,7 @@ import httpx
 from enum import Enum
 import csv
 import io
-import zipfile
+from pypdf import PdfWriter, PdfReader
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1309,7 +1309,7 @@ async def bulk_download_shipments(status: Optional[ShipmentStatus] = None, curre
 
 @api_router.get("/shipments/bulk/labels")
 async def bulk_download_labels(waybills: str = Query(..., description="Comma-separated waybill numbers"), current_user: User = Depends(get_current_user)):
-    """Download multiple shipping labels as a single PDF (combined)"""
+    """Download multiple shipping labels merged into a single PDF."""
     waybill_list = [w.strip() for w in waybills.split(",") if w.strip()]
     
     if not waybill_list:
@@ -1330,22 +1330,36 @@ async def bulk_download_labels(waybills: str = Query(..., description="Comma-sep
             if not packages:
                 raise HTTPException(status_code=404, detail="No labels found for the given waybills")
             
-            # Fetch all PDFs and combine them into a ZIP for download
-            output_zip = io.BytesIO()
-            with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-                for pkg in packages:
-                    pdf_link = pkg.get("pdf_download_link")
-                    waybill = pkg.get("wbn", "unknown")
-                    if pdf_link:
-                        pdf_resp = await http_client.get(pdf_link)
-                        if pdf_resp.status_code == 200:
-                            zf.writestr(f"label_{waybill}.pdf", pdf_resp.content)
+            # Fetch all PDFs and merge them into a single PDF
+            merger = PdfWriter()
+            merged_count = 0
+            for pkg in packages:
+                pdf_link = pkg.get("pdf_download_link")
+                if not pdf_link:
+                    continue
+                pdf_resp = await http_client.get(pdf_link)
+                if pdf_resp.status_code != 200 or not pdf_resp.content:
+                    continue
+                try:
+                    reader = PdfReader(io.BytesIO(pdf_resp.content))
+                    for page in reader.pages:
+                        merger.add_page(page)
+                    merged_count += 1
+                except Exception as e:
+                    logger.warning(f"Skipping unreadable PDF for waybill {pkg.get('wbn')}: {str(e)}")
             
-            output_zip.seek(0)
+            if merged_count == 0:
+                raise HTTPException(status_code=404, detail="No label PDFs could be fetched from Delhivery")
+            
+            output_pdf = io.BytesIO()
+            merger.write(output_pdf)
+            merger.close()
+            output_pdf.seek(0)
+            
             return StreamingResponse(
-                output_zip,
-                media_type="application/zip",
-                headers={"Content-Disposition": f'attachment; filename="bulk_labels_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip"'}
+                output_pdf,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="bulk_labels_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'}
             )
     except HTTPException:
         raise
