@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -14,6 +14,7 @@ export const ShipmentList = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     fetchShipments();
@@ -28,6 +29,19 @@ export const ShipmentList = () => {
       console.error("Failed to fetch shipments", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await axios.post(`${API}/shipments/refresh`);
+      await fetchShipments();
+      toast.success(res.data?.message || "Statuses refreshed");
+    } catch (error) {
+      toast.error("Failed to refresh statuses");
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -71,7 +85,17 @@ export const ShipmentList = () => {
           <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="shipments-title">All Shipments</h1>
           <p className="text-sm lg:text-base text-zinc-500">View and manage all your shipments</p>
         </div>
-        <div className="flex gap-2 lg:gap-3 items-center">
+        <div className="flex gap-2 lg:gap-3 items-center flex-wrap">
+          <Button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            data-testid="refresh-statuses-btn"
+            className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200 rounded-sm whitespace-nowrap"
+          >
+            <RefreshCw className={`w-4 h-4 mr-1 lg:mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">{isRefreshing ? "Refreshing..." : "Refresh"}</span>
+            <span className="sm:hidden">Sync</span>
+          </Button>
           <Button
             onClick={handleExport}
             disabled={exporting || shipments.length === 0}

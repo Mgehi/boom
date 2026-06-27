@@ -286,7 +286,7 @@ async def create_delhivery_shipment(shipment_data: CreateShipmentRequest) -> Dic
         raise HTTPException(status_code=500, detail=f"Delhivery API error: {str(e)}")
 
 async def track_delhivery_shipment(waybill: str) -> Dict[str, Any]:
-    """Track shipment using Delhivery API"""
+    """Track shipment using Delhivery API. `waybill` can be a single AWB or comma-separated AWBs."""
     url = f"{DELHIVERY_BASE_URL}/v1/packages/json/"
     
     headers = {
@@ -303,6 +303,104 @@ async def track_delhivery_shipment(waybill: str) -> Dict[str, Any]:
     except httpx.HTTPError as e:
         logger.error(f"Tracking API error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Tracking API error: {str(e)}")
+
+
+def map_delhivery_status(status_str: str) -> ShipmentStatus:
+    """Map Delhivery status string to our ShipmentStatus enum."""
+    if not status_str:
+        return ShipmentStatus.MANIFESTED
+    s = str(status_str).strip().lower()
+    if "deliver" in s and "out for" not in s and "not deliver" not in s and "un" not in s:
+        return ShipmentStatus.DELIVERED
+    if "out for delivery" in s or s == "ofd":
+        return ShipmentStatus.OUT_FOR_DELIVERY
+    if "rto" in s or "return" in s:
+        return ShipmentStatus.RTO
+    if "in transit" in s or "dispatched" in s or "in-transit" in s or "intransit" in s:
+        return ShipmentStatus.IN_TRANSIT
+    if "manifest" in s:
+        return ShipmentStatus.MANIFESTED
+    if "pending" in s:
+        return ShipmentStatus.PENDING
+    if "exception" in s or "ndr" in s or "fail" in s or "undeliver" in s:
+        return ShipmentStatus.EXCEPTION
+    return ShipmentStatus.MANIFESTED
+
+
+# Final statuses that don't need further syncing
+FINAL_STATUSES = {ShipmentStatus.DELIVERED.value, ShipmentStatus.RTO.value}
+# Auto-sync staleness threshold
+SYNC_STALE_SECONDS = 300  # 5 minutes
+
+
+async def sync_user_shipment_statuses(user_id: str, force: bool = False) -> int:
+    """Refresh shipment statuses for the user from Delhivery for non-final, stale shipments.
+    Returns count of shipments updated. Best-effort; logs errors but never raises."""
+    try:
+        query: Dict[str, Any] = {
+            "user_id": user_id,
+            "waybill": {"$exists": True, "$ne": None},
+            "status": {"$nin": list(FINAL_STATUSES)},
+        }
+        if not force:
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=SYNC_STALE_SECONDS)).isoformat()
+            query["$or"] = [
+                {"last_synced_at": {"$exists": False}},
+                {"last_synced_at": None},
+                {"last_synced_at": {"$lt": cutoff}},
+            ]
+        
+        shipments = await db.shipments.find(query, {"_id": 0, "id": 1, "waybill": 1}).to_list(500)
+        if not shipments:
+            return 0
+        
+        waybills = [s["waybill"] for s in shipments if s.get("waybill")]
+        if not waybills:
+            return 0
+        
+        # Delhivery supports comma-separated waybills (batch up to ~50 per request to be safe)
+        updated = 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for i in range(0, len(waybills), 50):
+            batch = waybills[i:i + 50]
+            try:
+                data = await track_delhivery_shipment(",".join(batch))
+            except Exception as e:
+                logger.warning(f"Bulk tracking failed for batch: {str(e)}")
+                continue
+            
+            shipment_data = data.get("ShipmentData") or []
+            for entry in shipment_data:
+                sd = entry.get("Shipment", {}) or {}
+                awb = sd.get("AWB") or sd.get("Awb")
+                if not awb:
+                    continue
+                status_obj = sd.get("Status") or {}
+                status_raw = status_obj.get("Status") or status_obj.get("StatusType") or ""
+                instructions = status_obj.get("Instructions") or ""
+                # Prefer Instructions for finer detail (e.g., "Delivered")
+                new_status = map_delhivery_status(instructions or status_raw)
+                
+                await db.shipments.update_one(
+                    {"user_id": user_id, "waybill": awb},
+                    {"$set": {
+                        "status": new_status.value,
+                        "tracking_data": data,
+                        "last_synced_at": now_iso,
+                        "updated_at": now_iso,
+                    }}
+                )
+                updated += 1
+        
+        # Mark unmatched (Delhivery didn't return data) as synced too so we don't hammer the API
+        await db.shipments.update_many(
+            {"user_id": user_id, "waybill": {"$in": waybills}, "last_synced_at": {"$ne": now_iso}},
+            {"$set": {"last_synced_at": now_iso}}
+        )
+        return updated
+    except Exception as e:
+        logger.error(f"sync_user_shipment_statuses failed: {str(e)}")
+        return 0
 
 async def schedule_delhivery_pickup(pickup_data: PickupRequest) -> Dict[str, Any]:
     """Schedule pickup with Delhivery"""
@@ -711,6 +809,9 @@ async def get_shipments(
     current_user: User = Depends(get_current_user)
 ):
     """Get all shipments for the current user"""
+    # Best-effort sync of stale statuses from Delhivery (throttled)
+    await sync_user_shipment_statuses(current_user.user_id)
+    
     query = {"user_id": current_user.user_id}
     if status:
         query["status"] = status.value
@@ -753,12 +854,36 @@ async def track_shipment(shipment_id: str, current_user: User = Depends(get_curr
     
     tracking_data = await track_delhivery_shipment(shipment["waybill"])
     
+    # Extract latest status and persist it to DB
+    update_fields: Dict[str, Any] = {
+        "tracking_data": tracking_data,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_synced_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        if tracking_data and tracking_data.get("ShipmentData"):
+            sd = tracking_data["ShipmentData"][0].get("Shipment", {}) or {}
+            status_obj = sd.get("Status") or {}
+            status_raw = status_obj.get("Status") or status_obj.get("StatusType") or ""
+            instructions = status_obj.get("Instructions") or ""
+            new_status = map_delhivery_status(instructions or status_raw)
+            update_fields["status"] = new_status.value
+    except Exception as e:
+        logger.warning(f"Failed to extract status from tracking_data: {str(e)}")
+    
     await db.shipments.update_one(
         {"id": shipment_id, "user_id": current_user.user_id},
-        {"$set": {"tracking_data": tracking_data, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": update_fields}
     )
     
     return tracking_data
+
+
+@api_router.post("/shipments/refresh")
+async def refresh_all_shipments(current_user: User = Depends(get_current_user)):
+    """Force-refresh statuses for all of the user's non-final shipments from Delhivery."""
+    updated = await sync_user_shipment_statuses(current_user.user_id, force=True)
+    return {"updated": updated, "message": f"Refreshed {updated} shipment(s)"}
 
 @api_router.get("/shipments/{shipment_id}/label")
 async def get_shipment_label(shipment_id: str, current_user: User = Depends(get_current_user)):
@@ -848,6 +973,9 @@ async def get_pickups(limit: int = Query(100, le=500), current_user: User = Depe
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
     """Get dashboard statistics for the current user"""
+    # Best-effort sync of stale statuses from Delhivery (throttled)
+    await sync_user_shipment_statuses(current_user.user_id)
+    
     base_query = {"user_id": current_user.user_id}
     
     total = await db.shipments.count_documents(base_query)

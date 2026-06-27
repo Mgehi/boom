@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Package, TrendingUp, Truck, AlertCircle, Plus } from "lucide-react";
+import { Package, TrendingUp, Truck, AlertCircle, Plus, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import PincodeChecker from "@/components/PincodeChecker";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -17,6 +18,7 @@ export const Dashboard = () => {
   });
   const [recentShipments, setRecentShipments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -35,6 +37,19 @@ export const Dashboard = () => {
       console.error("Failed to fetch dashboard data", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setSyncing(true);
+    try {
+      const res = await axios.post(`${API}/shipments/refresh`);
+      await fetchDashboardData();
+      toast.success(res.data?.message || "Statuses refreshed");
+    } catch (error) {
+      toast.error("Failed to refresh statuses");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -67,9 +82,20 @@ export const Dashboard = () => {
 
   return (
     <div className="p-4 lg:p-8" data-testid="dashboard">
-      <div className="mb-6 lg:mb-8">
-        <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="dashboard-title">Dashboard</h1>
-        <p className="text-sm lg:text-base text-zinc-500">Monitor your logistics operations</p>
+      <div className="mb-6 lg:mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2" data-testid="dashboard-title">Dashboard</h1>
+          <p className="text-sm lg:text-base text-zinc-500">Monitor your logistics operations</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={syncing}
+          data-testid="refresh-statuses-btn"
+          className="inline-flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-sm font-medium text-sm hover:bg-zinc-800 transition-colors disabled:opacity-60 self-start"
+        >
+          <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Refreshing..." : "Refresh Statuses"}
+        </button>
       </div>
 
       {/* Stats Grid */}
