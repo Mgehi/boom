@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api, { BACKEND_URL } from "@/lib/api";
 import { toast } from "sonner";
 import { Copy, Check, Save, Building } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export const Settings = () => {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -34,7 +31,7 @@ export const Settings = () => {
 
   const fetchSettings = async () => {
     try {
-      const response = await axios.get(`${API}/settings`);
+      const response = await api.get("/settings");
       setSettings({
         business_name: response.data.business_name || "",
         sender_name: response.data.sender_name || "",
@@ -61,7 +58,7 @@ export const Settings = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await axios.put(`${API}/settings`, settings);
+      await api.put("/settings", settings);
       toast.success("Settings saved successfully");
     } catch (error) {
       toast.error("Failed to save settings");
@@ -78,7 +75,7 @@ export const Settings = () => {
 
     setRegistering(true);
     try {
-      const response = await axios.post(`${API}/warehouse/register`, {
+      const response = await api.post("/warehouse/register", {
         name: settings.pickup_location,
         email: settings.sender_email || "support@business.com",
         phone: settings.sender_phone,

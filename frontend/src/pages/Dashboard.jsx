@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { Package, TrendingUp, Truck, AlertCircle, Plus, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import PincodeChecker from "@/components/PincodeChecker";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { getStatusClass } from "@/lib/status";
 
 export const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -27,8 +25,8 @@ export const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       const [statsRes, shipmentsRes] = await Promise.all([
-        axios.get(`${API}/dashboard/stats`),
-        axios.get(`${API}/shipments?limit=10`),
+        api.get("/dashboard/stats"),
+        api.get("/shipments?limit=10"),
       ]);
       
       setStats(statsRes.data);
@@ -43,7 +41,7 @@ export const Dashboard = () => {
   const handleRefresh = async () => {
     setSyncing(true);
     try {
-      const res = await axios.post(`${API}/shipments/refresh`);
+      const res = await api.post("/shipments/refresh");
       await fetchDashboardData();
       toast.success(res.data?.message || "Statuses refreshed");
     } catch (error) {
@@ -60,17 +58,6 @@ export const Dashboard = () => {
     { label: "Delivered", value: stats.delivered, icon: TrendingUp, color: "text-zinc-900" },
     { label: "Exceptions", value: stats.exceptions, icon: AlertCircle, color: "text-red-600" },
   ];
-
-  const getStatusClass = (status) => {
-    const statusMap = {
-      Delivered: "bg-zinc-900 text-white border-transparent",
-      "In Transit": "bg-zinc-100 text-zinc-900 border-zinc-300",
-      Exception: "bg-red-50 text-red-700 border-red-200",
-      Pending: "bg-white text-zinc-600 border-zinc-200",
-      Manifested: "bg-zinc-100 text-zinc-900 border-zinc-300",
-    };
-    return statusMap[status] || "bg-white text-zinc-600 border-zinc-200";
-  };
 
   if (loading) {
     return (

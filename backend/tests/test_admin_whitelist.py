@@ -4,9 +4,10 @@ import uuid
 import pytest
 import requests
 from datetime import datetime, timezone, timedelta
-from pymongo import MongoClient
 from dotenv import load_dotenv
 from pathlib import Path
+
+from tests.db_helper import TestDB
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -18,11 +19,7 @@ if not BASE_URL:
         if line.startswith("REACT_APP_BACKEND_URL="):
             BASE_URL = line.split("=", 1)[1].strip().rstrip('/')
 
-MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-DB_NAME = os.environ.get('DB_NAME', 'test_database')
-
-mongo = MongoClient(MONGO_URL)
-db = mongo[DB_NAME]
+db = TestDB()
 
 TEST_PREFIX = "TEST_ADMIN_"
 
@@ -84,15 +81,15 @@ class TestAuthMe:
         assert r.json()["is_admin"] is False
 
 
-# ---------------- /api/auth/session bootstrap & whitelist ----------------
-class TestSessionWhitelist:
-    def test_no_session_id_returns_400(self):
-        r = requests.post(f"{BASE_URL}/api/auth/session")
-        assert r.status_code == 400
+# ---------------- Google OAuth login/callback surface ----------------
+class TestGoogleOAuthSurface:
+    def test_login_redirects_to_google(self):
+        r = requests.get(f"{BASE_URL}/api/auth/google/login", allow_redirects=False)
+        assert r.status_code in (302, 307)
+        assert "accounts.google.com" in r.headers.get("location", "")
 
-    def test_invalid_session_id_returns_401(self):
-        r = requests.post(f"{BASE_URL}/api/auth/session",
-                          headers={"X-Session-ID": "invalid-not-a-real-session"})
+    def test_callback_without_code_returns_401(self):
+        r = requests.get(f"{BASE_URL}/api/auth/google/callback")
         assert r.status_code == 401
 
 

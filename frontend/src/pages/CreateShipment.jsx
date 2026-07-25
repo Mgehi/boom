@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export const CreateShipment = () => {
   const navigate = useNavigate();
@@ -46,7 +43,7 @@ export const CreateShipment = () => {
 
   // Auto-load default sender from settings
   useEffect(() => {
-    axios.get(`${API}/settings`).then((res) => {
+    api.get("/settings").then((res) => {
       const s = res.data;
       if (s?.sender_name) {
         setFormData((prev) => ({
@@ -117,7 +114,7 @@ export const CreateShipment = () => {
         shipment_type: "FWD",
       };
 
-      const response = await axios.post(`${API}/shipments`, payload);
+      const response = await api.post("/shipments", payload);
       toast.success("Shipment created successfully!");
       navigate(`/shipments/${response.data.id}`);
     } catch (error) {

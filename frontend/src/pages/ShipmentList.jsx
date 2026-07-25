@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Download, RefreshCw } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { getStatusClass } from "@/lib/status";
 
 export const ShipmentList = () => {
   const [shipments, setShipments] = useState([]);
@@ -18,12 +16,13 @@ export const ShipmentList = () => {
 
   useEffect(() => {
     fetchShipments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
   const fetchShipments = async () => {
     try {
-      const url = filter === "all" ? `${API}/shipments` : `${API}/shipments?status=${filter}`;
-      const response = await axios.get(url);
+      const url = filter === "all" ? "/shipments" : `/shipments?status=${filter}`;
+      const response = await api.get(url);
       setShipments(response.data);
     } catch (error) {
       console.error("Failed to fetch shipments", error);
@@ -35,7 +34,7 @@ export const ShipmentList = () => {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const res = await axios.post(`${API}/shipments/refresh`);
+      const res = await api.post("/shipments/refresh");
       await fetchShipments();
       toast.success(res.data?.message || "Statuses refreshed");
     } catch (error) {
@@ -48,10 +47,10 @@ export const ShipmentList = () => {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const url = filter === "all" 
-        ? `${API}/shipments/bulk/download`
-        : `${API}/shipments/bulk/download?status=${filter}`;
-      const response = await axios.get(url, { responseType: "blob" });
+      const url = filter === "all"
+        ? "/shipments/bulk/download"
+        : `/shipments/bulk/download?status=${filter}`;
+      const response = await api.get(url, { responseType: "blob" });
       const blob = new Blob([response.data], { type: "text/csv" });
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -65,17 +64,6 @@ export const ShipmentList = () => {
     } finally {
       setExporting(false);
     }
-  };
-
-  const getStatusClass = (status) => {
-    const statusMap = {
-      Delivered: "bg-zinc-900 text-white border-transparent",
-      "In Transit": "bg-zinc-100 text-zinc-900 border-zinc-300",
-      Exception: "bg-red-50 text-red-700 border-red-200",
-      Pending: "bg-white text-zinc-600 border-zinc-200",
-      Manifested: "bg-zinc-100 text-zinc-900 border-zinc-300",
-    };
-    return statusMap[status] || "bg-white text-zinc-600 border-zinc-200";
   };
 
   return (

@@ -2,20 +2,29 @@ import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Package, Plus, List, Calendar, Settings as SettingsIcon, Upload, Undo2, LogOut, Menu, X, Shield } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
-import axios from "axios";
+import api from "@/lib/api";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const DEFAULT_APP_NAME = "Delhivery Logistics";
 
 export const Layout = ({ user }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  
+  const [appName, setAppName] = useState(DEFAULT_APP_NAME);
+
   // Close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
+
+  // Show the client's own business name in the sidebar, once configured
+  useEffect(() => {
+    api.get("/settings")
+      .then((res) => {
+        if (res.data?.business_name) setAppName(res.data.business_name);
+      })
+      .catch(() => {});
+  }, []);
   
   const isActive = (path) => {
     if (path === "/" && location.pathname === "/") return true;
@@ -36,7 +45,7 @@ export const Layout = ({ user }) => {
   
   const handleLogout = async () => {
     try {
-      await axios.post(`${API}/auth/logout`, {}, { withCredentials: true });
+      await api.post("/auth/logout");
     } catch (e) { /* ignore */ }
     navigate("/login");
     window.location.reload();
@@ -46,7 +55,7 @@ export const Layout = ({ user }) => {
     <>
       <div className="p-6 border-b border-zinc-200 flex items-center justify-between">
         <div>
-          <h1 className="text-lg lg:text-xl font-bold tracking-tight" data-testid="app-title">Delhivery Logistics</h1>
+          <h1 className="text-lg lg:text-xl font-bold tracking-tight" data-testid="app-title">{appName}</h1>
           <p className="text-xs lg:text-sm text-zinc-500 mt-1">Automation Dashboard</p>
         </div>
         {/* Close button on mobile */}
@@ -178,7 +187,7 @@ export const Layout = ({ user }) => {
         >
           <Menu className="w-6 h-6" />
         </button>
-        <h1 className="text-base font-bold tracking-tight">Delhivery Logistics</h1>
+        <h1 className="text-base font-bold tracking-tight">{appName}</h1>
         {user?.picture ? (
           <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full border border-zinc-200" />
         ) : user ? (
