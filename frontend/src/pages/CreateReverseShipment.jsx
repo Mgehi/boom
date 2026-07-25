@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import api from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -7,11 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Undo2, AlertCircle } from "lucide-react";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export const CreateReverseShipment = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [settings, setSettings] = useState(null);
+  const { settings: rawSettings } = useSettings();
+  const settings = rawSettings?.sender_name ? rawSettings : null;
   const [formData, setFormData] = useState({
     order_id: "",
     customer_name: "",
@@ -33,14 +35,6 @@ export const CreateReverseShipment = () => {
     height: 10,
     seller_invoice: "",
   });
-
-  useEffect(() => {
-    api.get("/settings").then((res) => {
-      if (res.data?.sender_name) {
-        setSettings(res.data);
-      }
-    }).catch(() => {});
-  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

@@ -5,49 +5,33 @@ import { Copy, Check, Save, Building } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useSettings } from "@/contexts/SettingsContext";
+
+const normalize = (s) => ({
+  business_name: s?.business_name || "",
+  sender_name: s?.sender_name || "",
+  sender_phone: s?.sender_phone || "",
+  sender_email: s?.sender_email || "",
+  sender_address: s?.sender_address || "",
+  sender_city: s?.sender_city || "",
+  sender_state: s?.sender_state || "",
+  sender_pincode: s?.sender_pincode || "",
+  pickup_location: s?.pickup_location || "",
+  seller_gst: s?.seller_gst || "",
+});
 
 export const Settings = () => {
+  const { settings: sharedSettings, setSettings: setSharedSettings } = useSettings();
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [saving, setSaving] = useState(false);
   const [registering, setRegistering] = useState(false);
-  const [settings, setSettings] = useState({
-    business_name: "",
-    sender_name: "",
-    sender_phone: "",
-    sender_email: "",
-    sender_address: "",
-    sender_city: "",
-    sender_state: "",
-    sender_pincode: "",
-    pickup_location: "",
-    seller_gst: "",
-  });
+  const [settings, setSettings] = useState(normalize(sharedSettings));
 
   const webhookUrl = `${BACKEND_URL}/api/orders`;
 
   useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
-    try {
-      const response = await api.get("/settings");
-      setSettings({
-        business_name: response.data.business_name || "",
-        sender_name: response.data.sender_name || "",
-        sender_phone: response.data.sender_phone || "",
-        sender_email: response.data.sender_email || "",
-        sender_address: response.data.sender_address || "",
-        sender_city: response.data.sender_city || "",
-        sender_state: response.data.sender_state || "",
-        sender_pincode: response.data.sender_pincode || "",
-        pickup_location: response.data.pickup_location || "",
-        seller_gst: response.data.seller_gst || "",
-      });
-    } catch (error) {
-      console.error("Failed to load settings", error);
-    }
-  };
+    if (sharedSettings) setSettings(normalize(sharedSettings));
+  }, [sharedSettings]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -58,7 +42,8 @@ export const Settings = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put("/settings", settings);
+      const response = await api.put("/settings", settings);
+      setSharedSettings(response.data);
       toast.success("Settings saved successfully");
     } catch (error) {
       toast.error("Failed to save settings");

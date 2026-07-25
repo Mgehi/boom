@@ -75,21 +75,21 @@ async def list_registered_users(admin: UserOut = Depends(get_admin_user), db: As
     result = await db.execute(select(User).order_by(User.created_at.desc()))
     users = result.scalars().all()
 
-    output = []
-    for u in users:
-        count = (
-            await db.execute(select(func.count()).select_from(Shipment).where(Shipment.user_id == u.user_id))
-        ).scalar_one()
-        output.append({
+    count_result = await db.execute(select(Shipment.user_id, func.count()).group_by(Shipment.user_id))
+    counts_by_user = dict(count_result.all())
+
+    return [
+        {
             "user_id": u.user_id,
             "email": u.email,
             "name": u.name,
             "picture": u.picture,
             "is_admin": u.is_admin,
             "created_at": u.created_at,
-            "shipment_count": count,
-        })
-    return output
+            "shipment_count": counts_by_user.get(u.user_id, 0),
+        }
+        for u in users
+    ]
 
 
 @router.delete("/users/{user_id}")

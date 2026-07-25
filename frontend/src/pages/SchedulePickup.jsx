@@ -5,8 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "lucide-react";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export const SchedulePickup = () => {
+  const { settings } = useSettings();
   const [loading, setLoading] = useState(false);
   const [defaultPickup, setDefaultPickup] = useState("");
   const [formData, setFormData] = useState({
@@ -17,13 +19,11 @@ export const SchedulePickup = () => {
 
   useEffect(() => {
     // Load default pickup location from settings
-    api.get("/settings").then((res) => {
-      if (res.data?.pickup_location) {
-        setDefaultPickup(res.data.pickup_location);
-        setFormData((prev) => ({ ...prev, pickup_location: res.data.pickup_location }));
-      }
-    }).catch(() => {});
-  }, []);
+    if (settings?.pickup_location) {
+      setDefaultPickup(settings.pickup_location);
+      setFormData((prev) => ({ ...prev, pickup_location: settings.pickup_location }));
+    }
+  }, [settings]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

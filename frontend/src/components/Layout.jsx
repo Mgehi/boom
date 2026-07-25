@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Package, Plus, List, Calendar, Settings as SettingsIcon, Upload, Undo2, LogOut, Menu, X, Shield } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import api from "@/lib/api";
+import { useSettings } from "@/contexts/SettingsContext";
 
 const DEFAULT_APP_NAME = "Delhivery Logistics";
 
@@ -10,22 +11,14 @@ export const Layout = ({ user }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [appName, setAppName] = useState(DEFAULT_APP_NAME);
+  const { settings } = useSettings();
+  const appName = settings?.business_name || DEFAULT_APP_NAME;
 
   // Close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // Show the client's own business name in the sidebar, once configured
-  useEffect(() => {
-    api.get("/settings")
-      .then((res) => {
-        if (res.data?.business_name) setAppName(res.data.business_name);
-      })
-      .catch(() => {});
-  }, []);
-  
   const isActive = (path) => {
     if (path === "/" && location.pathname === "/") return true;
     if (path !== "/" && location.pathname.startsWith(path)) return true;

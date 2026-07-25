@@ -14,6 +14,7 @@ import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
 import PublicTracking from "@/pages/PublicTracking";
 import Layout from "@/components/Layout";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 
 const ProtectedRoute = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
@@ -43,7 +44,11 @@ const ProtectedRoute = () => {
     return <Navigate to="/login" replace />;
   }
 
-  return <Layout user={user} />;
+  return (
+    <SettingsProvider>
+      <Layout user={user} />
+    </SettingsProvider>
+  );
 };
 
 function AppRouter() {

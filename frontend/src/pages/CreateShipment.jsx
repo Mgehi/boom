@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export const CreateShipment = () => {
   const navigate = useNavigate();
+  const { settings } = useSettings();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     order_id: "",
@@ -43,24 +45,21 @@ export const CreateShipment = () => {
 
   // Auto-load default sender from settings
   useEffect(() => {
-    api.get("/settings").then((res) => {
-      const s = res.data;
-      if (s?.sender_name) {
-        setFormData((prev) => ({
-          ...prev,
-          pickup_location: s.pickup_location || "",
-          sender_name: s.sender_name || "",
-          sender_phone: s.sender_phone || "",
-          sender_email: s.sender_email || "",
-          sender_address: s.sender_address || "",
-          sender_city: s.sender_city || "",
-          sender_state: s.sender_state || "",
-          sender_pincode: s.sender_pincode || "",
-          seller_gst: s.seller_gst || "",
-        }));
-      }
-    }).catch(() => {});
-  }, []);
+    if (settings?.sender_name) {
+      setFormData((prev) => ({
+        ...prev,
+        pickup_location: settings.pickup_location || "",
+        sender_name: settings.sender_name || "",
+        sender_phone: settings.sender_phone || "",
+        sender_email: settings.sender_email || "",
+        sender_address: settings.sender_address || "",
+        sender_city: settings.sender_city || "",
+        sender_state: settings.sender_state || "",
+        sender_pincode: settings.sender_pincode || "",
+        seller_gst: settings.seller_gst || "",
+      }));
+    }
+  }, [settings]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
