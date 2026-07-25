@@ -1,7 +1,7 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import Dashboard from "@/pages/Dashboard";
 import CreateShipment from "@/pages/CreateShipment";
 import CreateReverseShipment from "@/pages/CreateReverseShipment";
@@ -12,44 +12,21 @@ import BulkUpload from "@/pages/BulkUpload";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
-import AuthCallback from "@/pages/AuthCallback";
 import PublicTracking from "@/pages/PublicTracking";
 import Layout from "@/components/Layout";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-// Send cookies with all requests
-axios.defaults.withCredentials = true;
-
-const ProtectedRoute = ({ children }) => {
-  const location = useLocation();
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    location.state?.user ? true : null
-  );
-  const [user, setUser] = useState(location.state?.user || null);
+const ProtectedRoute = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    if (location.state?.user) {
-      setIsAuthenticated(true);
-      setUser(location.state.user);
-      return;
-    }
-    
-    const checkAuth = async () => {
-      try {
-        const response = await axios.get(`${API}/auth/me`, {
-          withCredentials: true,
-        });
+    api.get("/auth/me")
+      .then((response) => {
         setIsAuthenticated(true);
         setUser(response.data);
-      } catch (error) {
-        setIsAuthenticated(false);
-      }
-    };
-    
-    checkAuth();
-  }, [location.state]);
+      })
+      .catch(() => setIsAuthenticated(false));
+  }, []);
 
   if (isAuthenticated === null) {
     return (
@@ -70,14 +47,6 @@ const ProtectedRoute = ({ children }) => {
 };
 
 function AppRouter() {
-  const location = useLocation();
-  
-  // CRITICAL: Check URL fragment for session_id synchronously during render
-  // This prevents race conditions before ProtectedRoute runs
-  if (location.hash?.includes("session_id=")) {
-    return <AuthCallback />;
-  }
-  
   return (
     <Routes>
       <Route path="/login" element={<Login />} />

@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import api from "@/lib/api";
 import { Package, MapPin, Truck, CheckCircle2, Clock, AlertCircle, Undo2 } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 const STATUS_ICONS = {
   "Delivered": CheckCircle2,
@@ -25,7 +22,7 @@ export const PublicTracking = () => {
   useEffect(() => {
     const fetch = async () => {
       try {
-        const response = await axios.get(`${API}/track/${waybill}`);
+        const response = await api.get(`/track/${waybill}`);
         setData(response.data);
       } catch (e) {
         setError(e.response?.data?.detail || "Unable to track this shipment");

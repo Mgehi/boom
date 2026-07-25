@@ -1,14 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Package, LogIn, Truck, BarChart3, Upload, Calendar } from "lucide-react";
+import { BACKEND_URL } from "@/lib/api";
 
 export const Login = () => {
   const [loading, setLoading] = useState(false);
 
+  // If the redirect to Google never completes (blocked, back button via
+  // bfcache), don't leave the button stuck disabled forever.
+  useEffect(() => {
+    const handlePageShow = (event) => {
+      if (event.persisted) setLoading(false);
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
   const handleGoogleLogin = () => {
     setLoading(true);
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    const redirectUrl = window.location.origin + "/";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    window.location.href = `${BACKEND_URL}/api/auth/google/login`;
   };
 
   const features = [

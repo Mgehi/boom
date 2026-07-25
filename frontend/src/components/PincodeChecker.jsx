@@ -1,12 +1,9 @@
 import { useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, MapPin, Check, X } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export const PincodeChecker = () => {
   const [pincode, setPincode] = useState("");
@@ -23,7 +20,7 @@ export const PincodeChecker = () => {
     setLoading(true);
     setResult(null);
     try {
-      const response = await axios.get(`${API}/pincode/check?pincode=${pincode}`);
+      const response = await api.get(`/pincode/check?pincode=${pincode}`);
       setResult(response.data);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Failed to check pincode");

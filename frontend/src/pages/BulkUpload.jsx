@@ -1,11 +1,8 @@
 import { useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Upload, Download, FileText, Check, AlertCircle, Package } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export const BulkUpload = () => {
   const [file, setFile] = useState(null);
@@ -25,7 +22,7 @@ export const BulkUpload = () => {
 
   const handleDownloadTemplate = async () => {
     try {
-      const response = await axios.get(`${API}/shipments/bulk/template`, {
+      const response = await api.get("/shipments/bulk/template", {
         responseType: "blob",
       });
       const blob = new Blob([response.data], { type: "text/csv" });
@@ -55,7 +52,7 @@ export const BulkUpload = () => {
     formData.append("file", file);
 
     try {
-      const response = await axios.post(`${API}/shipments/bulk/upload`, formData, {
+      const response = await api.post("/shipments/bulk/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setResults(response.data);
@@ -69,7 +66,7 @@ export const BulkUpload = () => {
 
   const handleDownloadAllShipments = async () => {
     try {
-      const response = await axios.get(`${API}/shipments/bulk/download`, {
+      const response = await api.get("/shipments/bulk/download", {
         responseType: "blob",
       });
       const blob = new Blob([response.data], { type: "text/csv" });
@@ -103,7 +100,7 @@ export const BulkUpload = () => {
 
     setDownloadingLabels(true);
     try {
-      const response = await axios.get(`${API}/shipments/bulk/labels?waybills=${waybills}`, {
+      const response = await api.get(`/shipments/bulk/labels?waybills=${waybills}`, {
         responseType: "blob",
       });
       const blob = new Blob([response.data], { type: "application/pdf" });
@@ -231,7 +228,7 @@ export const BulkUpload = () => {
               <div className="mb-6 p-4 bg-[#FAFAFA] border border-zinc-200 rounded-sm flex items-center justify-between">
                 <div>
                   <p className="font-medium text-zinc-900">Download All Labels</p>
-                  <p className="text-sm text-zinc-500">Get all {results.success} shipping labels as a ZIP file</p>
+                  <p className="text-sm text-zinc-500">Get all {results.success} shipping labels as a single PDF</p>
                 </div>
                 <Button
                   onClick={handleDownloadBulkLabels}
@@ -240,7 +237,7 @@ export const BulkUpload = () => {
                   className="bg-red-600 text-white hover:bg-red-700 rounded-sm"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  {downloadingLabels ? "Downloading..." : "Download Labels ZIP"}
+                  {downloadingLabels ? "Downloading..." : "Download Labels PDF"}
                 </Button>
               </div>
             )}

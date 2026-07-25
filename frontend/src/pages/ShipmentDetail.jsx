@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import axios from "axios";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Download, RefreshCw, Package, ArrowLeft, Share2 } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { getStatusClass } from "@/lib/status";
 
 export const ShipmentDetail = () => {
   const { id } = useParams();
@@ -17,11 +15,12 @@ export const ShipmentDetail = () => {
 
   useEffect(() => {
     fetchShipment();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const fetchShipment = async () => {
     try {
-      const response = await axios.get(`${API}/shipments/${id}`);
+      const response = await api.get(`/shipments/${id}`);
       setShipment(response.data);
       if (response.data.tracking_data) {
         setTracking(response.data.tracking_data);
@@ -42,7 +41,7 @@ export const ShipmentDetail = () => {
 
     setTrackingLoading(true);
     try {
-      const response = await axios.get(`${API}/shipments/${id}/track`);
+      const response = await api.get(`/shipments/${id}/track`);
       setTracking(response.data);
       toast.success("Tracking information updated");
     } catch (error) {
@@ -88,7 +87,7 @@ export const ShipmentDetail = () => {
     }
 
     try {
-      const response = await axios.get(`${API}/shipments/${id}/label`, {
+      const response = await api.get(`/shipments/${id}/label`, {
         responseType: "blob",
       });
       
@@ -118,17 +117,6 @@ export const ShipmentDetail = () => {
       console.error("Failed to get label", error);
       toast.error(error.response?.data?.detail || "Failed to generate shipping label");
     }
-  };
-
-  const getStatusClass = (status) => {
-    const statusMap = {
-      Delivered: "bg-zinc-900 text-white border-transparent",
-      "In Transit": "bg-zinc-100 text-zinc-900 border-zinc-300",
-      Exception: "bg-red-50 text-red-700 border-red-200",
-      Pending: "bg-white text-zinc-600 border-zinc-200",
-      Manifested: "bg-zinc-100 text-zinc-900 border-zinc-300",
-    };
-    return statusMap[status] || "bg-white text-zinc-600 border-zinc-200";
   };
 
   if (loading) {
@@ -219,20 +207,20 @@ export const ShipmentDetail = () => {
             <div className="border border-zinc-200 rounded-sm bg-white p-6">
               <h3 className="text-xs uppercase tracking-wider text-zinc-500 mb-4">Sender</h3>
               <div className="space-y-2">
-                <p className="font-medium text-zinc-900">{shipment.sender.name}</p>
-                <p className="text-sm text-zinc-600">{shipment.sender.phone}</p>
-                <p className="text-sm text-zinc-600">{shipment.sender.address}</p>
-                <p className="text-sm text-zinc-600">{shipment.sender.city}, {shipment.sender.state} {shipment.sender.pincode}</p>
+                <p className="font-medium text-zinc-900">{shipment.sender?.name}</p>
+                <p className="text-sm text-zinc-600">{shipment.sender?.phone}</p>
+                <p className="text-sm text-zinc-600">{shipment.sender?.address}</p>
+                <p className="text-sm text-zinc-600">{shipment.sender?.city}, {shipment.sender?.state} {shipment.sender?.pincode}</p>
               </div>
             </div>
 
             <div className="border border-zinc-200 rounded-sm bg-white p-6">
               <h3 className="text-xs uppercase tracking-wider text-zinc-500 mb-4">Receiver</h3>
               <div className="space-y-2">
-                <p className="font-medium text-zinc-900">{shipment.receiver.name}</p>
-                <p className="text-sm text-zinc-600">{shipment.receiver.phone}</p>
-                <p className="text-sm text-zinc-600">{shipment.receiver.address}</p>
-                <p className="text-sm text-zinc-600">{shipment.receiver.city}, {shipment.receiver.state} {shipment.receiver.pincode}</p>
+                <p className="font-medium text-zinc-900">{shipment.receiver?.name}</p>
+                <p className="text-sm text-zinc-600">{shipment.receiver?.phone}</p>
+                <p className="text-sm text-zinc-600">{shipment.receiver?.address}</p>
+                <p className="text-sm text-zinc-600">{shipment.receiver?.city}, {shipment.receiver?.state} {shipment.receiver?.pincode}</p>
               </div>
             </div>
           </div>
@@ -241,7 +229,7 @@ export const ShipmentDetail = () => {
           <div className="border border-zinc-200 rounded-sm bg-white p-6">
             <h3 className="text-xs uppercase tracking-wider text-zinc-500 mb-4">Package Details</h3>
             <div className="space-y-3">
-              {shipment.items.map((item, idx) => (
+              {(shipment.items || []).map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center pb-3 border-b border-zinc-200 last:border-b-0">
                   <div>
                     <p className="font-medium text-zinc-900">{item.name}</p>

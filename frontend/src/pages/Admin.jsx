@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Shield, Plus, Trash2, Users, Mail, Crown } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export const Admin = () => {
   const [emails, setEmails] = useState([]);
@@ -24,8 +21,8 @@ export const Admin = () => {
   const fetchAll = async () => {
     try {
       const [emailsRes, usersRes] = await Promise.all([
-        axios.get(`${API}/admin/allowed-emails`, { withCredentials: true }),
-        axios.get(`${API}/admin/users`, { withCredentials: true }),
+        api.get("/admin/allowed-emails"),
+        api.get("/admin/users"),
       ]);
       setEmails(emailsRes.data);
       setUsers(usersRes.data);
@@ -48,10 +45,10 @@ export const Admin = () => {
     }
     setAdding(true);
     try {
-      await axios.post(`${API}/admin/allowed-emails`, {
+      await api.post("/admin/allowed-emails", {
         email: newEmail,
         note: newNote,
-      }, { withCredentials: true });
+      });
       toast.success(`${newEmail} added to whitelist`);
       setNewEmail("");
       setNewNote("");
@@ -68,7 +65,7 @@ export const Admin = () => {
       return;
     }
     try {
-      await axios.delete(`${API}/admin/allowed-emails/${id}`, { withCredentials: true });
+      await api.delete(`/admin/allowed-emails/${id}`);
       toast.success(`${email} removed from whitelist`);
       fetchAll();
     } catch (err) {
@@ -81,7 +78,7 @@ export const Admin = () => {
       return;
     }
     try {
-      const response = await axios.delete(`${API}/admin/users/${userId}`, { withCredentials: true });
+      const response = await api.delete(`/admin/users/${userId}`);
       toast.success(response.data?.message || `${email} access revoked`);
       fetchAll();
     } catch (err) {

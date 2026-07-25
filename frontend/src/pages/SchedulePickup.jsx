@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export const SchedulePickup = () => {
   const [loading, setLoading] = useState(false);
@@ -20,7 +17,7 @@ export const SchedulePickup = () => {
 
   useEffect(() => {
     // Load default pickup location from settings
-    axios.get(`${API}/settings`).then((res) => {
+    api.get("/settings").then((res) => {
       if (res.data?.pickup_location) {
         setDefaultPickup(res.data.pickup_location);
         setFormData((prev) => ({ ...prev, pickup_location: res.data.pickup_location }));
@@ -39,7 +36,7 @@ export const SchedulePickup = () => {
 
     try {
       // Send default pickup_time of "10:00:00" - backend handles it
-      await axios.post(`${API}/pickups`, {
+      await api.post("/pickups", {
         ...formData,
         pickup_time: "10:00:00",
         expected_package_count: parseInt(formData.expected_package_count),

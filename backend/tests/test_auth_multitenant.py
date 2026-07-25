@@ -4,15 +4,13 @@ import time
 import uuid
 import pytest
 import requests
-from pymongo import MongoClient
 from datetime import datetime, timezone, timedelta
 
-BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/')
-MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-DB_NAME = os.environ.get('DB_NAME', 'test_database')
+from tests.db_helper import TestDB
 
-mongo = MongoClient(MONGO_URL)
-db = mongo[DB_NAME]
+BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/')
+
+db = TestDB()
 
 
 def _make_user(prefix: str):
@@ -69,13 +67,13 @@ class TestAuth:
         r = requests.get(f"{BASE_URL}/api/auth/me")
         assert r.status_code == 401
 
-    def test_session_without_session_id_header(self):
-        r = requests.post(f"{BASE_URL}/api/auth/session")
-        assert r.status_code == 400
+    def test_google_login_redirects_to_google(self):
+        r = requests.get(f"{BASE_URL}/api/auth/google/login", allow_redirects=False)
+        assert r.status_code in (302, 307)
+        assert "accounts.google.com" in r.headers.get("location", "")
 
-    def test_session_with_invalid_session_id(self):
-        r = requests.post(f"{BASE_URL}/api/auth/session",
-                          headers={"X-Session-ID": "invalid_xxx"})
+    def test_google_callback_without_code_returns_401(self):
+        r = requests.get(f"{BASE_URL}/api/auth/google/callback")
         assert r.status_code == 401
 
     def test_me_with_valid_bearer(self, user_a):
