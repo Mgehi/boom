@@ -2,14 +2,14 @@
 public tracking, pincode check, warehouse registration."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import get_db
 from app.db.models import Shipment as ShipmentModel
 from app.deps import get_current_user
-from app.routers.shipments import sync_user_shipment_statuses
+from app.routers.shipments import sync_shipment_statuses_task
 from app.schemas.misc import DashboardStats, WarehouseRegistration
 from app.schemas.shipment import ShipmentStatus
 from app.schemas.user import UserOut
@@ -23,9 +23,13 @@ router = APIRouter(tags=["misc"])
 
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats(current_user: UserOut = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_dashboard_stats(
+    background_tasks: BackgroundTasks,
+    current_user: UserOut = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get dashboard statistics for the current user"""
-    await sync_user_shipment_statuses(current_user.user_id, db)
+    background_tasks.add_task(sync_shipment_statuses_task, current_user.user_id)
 
     async def count(*conditions):
         result = await db.execute(

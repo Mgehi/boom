@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.base import get_db
+from app.db.base import async_session, get_db
 from app.db.models import BusinessSettings as SettingsModel
 from app.db.models import Shipment as ShipmentModel
 from app.deps import get_current_user
@@ -131,6 +131,13 @@ async def sync_user_shipment_statuses(user_id: str, db: AsyncSession, force: boo
         return 0
 
 
+async def sync_shipment_statuses_task(user_id: str, force: bool = False) -> None:
+    """BackgroundTasks entry point: opens its own DB session since the
+    request's session is already closed by the time background tasks run."""
+    async with async_session() as db:
+        await sync_user_shipment_statuses(user_id, db, force=force)
+
+
 @router.post("/orders", response_model=ShipmentOut)
 async def receive_order(
     order: CreateShipmentRequest,
@@ -161,13 +168,14 @@ async def create_shipment_manual(
 
 @router.get("/shipments", response_model=list[ShipmentOut])
 async def get_shipments(
+    background_tasks: BackgroundTasks,
     status: Optional[ShipmentStatus] = None,
     limit: int = Query(100, le=500),
     current_user: UserOut = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all shipments for the current user"""
-    await sync_user_shipment_statuses(current_user.user_id, db)
+    background_tasks.add_task(sync_shipment_statuses_task, current_user.user_id)
 
     query = select(ShipmentModel).where(ShipmentModel.user_id == current_user.user_id)
     if status:
