@@ -52,6 +52,16 @@ Run the API:
 uvicorn app.main:app --reload --port 8000
 ```
 
+**Or with Docker Compose** (spins up Postgres + the API together, no local Python/Postgres install needed):
+
+```bash
+cd backend
+docker compose up --build
+docker compose exec api python create_tables.py   # once, first time only
+```
+
+The API's `DATABASE_URL` is preset to the compose-managed Postgres container — everything else (`GOOGLE_CLIENT_ID`, etc.) still comes from `backend/.env` as above.
+
 ### 2. Frontend
 
 ```bash

@@ -1,0 +1,50 @@
+# Local dev environment: Postgres + the API, hot-reloading on code changes.
+#
+# Usage:
+#   cd backend
+#   cp .env .env        # make sure backend/.env has GOOGLE_*/SESSION_SECRET_KEY/etc
+#                        # (DATABASE_URL below is overridden to point at the local
+#                        # postgres container, so its value in .env doesn't matter here)
+#   docker compose up --build
+#   docker compose exec api python create_tables.py   # once, first time only
+#
+# API available at http://localhost:8000, Postgres at localhost:5432
+# (user/password/db: postgres/postgres/delhivery_dev).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: delhivery_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/delhivery_dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/srv/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
