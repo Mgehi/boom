@@ -24,6 +24,7 @@ from app.services.delhivery import (
     map_delhivery_status,
     track_delhivery_shipment,
 )
+from app.services.label import build_label_pdf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["shipments"])
@@ -275,29 +276,17 @@ async def get_shipment_label(
         raise HTTPException(status_code=400, detail="No waybill found for this shipment")
 
     try:
-        data = await get_packing_slip(shipment.waybill)
-        packages = data.get("packages", [])
-        if not packages:
-            raise HTTPException(status_code=404, detail="No label found for this waybill")
-
-        pdf_link = packages[0].get("pdf_download_link")
-        if not pdf_link:
-            raise HTTPException(status_code=404, detail="PDF download link not available")
-
-        async with httpx.AsyncClient(timeout=30.0) as http_client:
-            pdf_response = await http_client.get(pdf_link)
-            pdf_response.raise_for_status()
-
+        pdf_bytes = await build_label_pdf(shipment)
         return StreamingResponse(
-            io.BytesIO(pdf_response.content),
+            io.BytesIO(pdf_bytes),
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="label_{shipment.waybill}.pdf"'}
         )
     except HTTPException:
         raise
     except httpx.HTTPError as e:
-        logger.error(f"Label download error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to download label: {str(e)}")
+        logger.error(f"Label generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate label: {str(e)}")
 
 
 @router.get("/shipments/bulk/template")

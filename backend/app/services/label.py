@@ -1,0 +1,231 @@
+import io
+from datetime import datetime
+from typing import Any, Dict, List
+
+import barcode
+from barcode.writer import ImageWriter
+from reportlab.lib.pagesizes import inch
+from reportlab.lib.utils import ImageReader, simpleSplit
+from reportlab.pdfgen import canvas
+
+from app.db.models import Shipment
+from app.services.delhivery import check_pincode_serviceability
+
+PAGE_W = 4 * inch
+PAGE_H = 6 * inch
+MARGIN = 0.15 * inch
+BOX_L = MARGIN
+BOX_R = PAGE_W - MARGIN
+BOX_W = BOX_R - BOX_L
+
+LOGO_PATH = "app/assets/delhivery_logo.png"
+
+
+def _barcode_image(value: str) -> ImageReader:
+    buf = io.BytesIO()
+    barcode.Code128(value, writer=ImageWriter()).write(
+        buf, options={"write_text": False, "quiet_zone": 0, "module_height": 12}
+    )
+    buf.seek(0)
+    return ImageReader(buf)
+
+
+def _wrapped_lines(text: str, font: str, size: float, max_width: float) -> List[str]:
+    return simpleSplit(text or "", font, size, max_width)
+
+
+async def build_label_pdf(shipment: Shipment) -> bytes:
+    sender = shipment.sender or {}
+    receiver = shipment.receiver or {}
+    items = shipment.items or []
+    refnum = ""
+    if shipment.delhivery_response:
+        packages = shipment.delhivery_response.get("packages") or []
+        if packages:
+            refnum = packages[0].get("refnum", "")
+
+    pin_info = await check_pincode_serviceability(receiver.get("pincode", ""))
+    raw = pin_info.get("raw_data", {})
+    sort_code = raw.get("sort_code", "")
+    locality = raw.get("inc", f"{receiver.get('city', '')} ({receiver.get('state', '')})")
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))
+    y = PAGE_H - MARGIN
+
+    def hline(y_pos: float) -> None:
+        c.line(BOX_L, y_pos, BOX_R, y_pos)
+
+    def vline(x_pos: float, y_top: float, y_bottom: float) -> None:
+        c.line(x_pos, y_top, x_pos, y_bottom)
+
+    c.setLineWidth(1.4)
+
+    # --- Section 1: seller / delhivery header, barcode, pin / sort code ---
+    top = y
+    hline(top)
+    header_h = 34
+    mid_x = BOX_L + BOX_W * 0.45
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString((BOX_L + mid_x) / 2, top - header_h / 2 - 4, sender.get("name", ""))
+    try:
+        logo = ImageReader(LOGO_PATH)
+        c.drawImage(
+            logo, mid_x + 6, top - header_h / 2 - 10, width=BOX_R - mid_x - 12, height=20,
+            preserveAspectRatio=True, mask="auto",
+        )
+    except Exception:
+        c.setFont("Helvetica-Bold", 11)
+        c.drawCentredString((mid_x + BOX_R) / 2, top - header_h / 2 - 4, "Delhivery")
+    y = top - header_h
+    vline(mid_x, top, y)
+    hline(y)
+
+    barcode_h = 55
+    bc_img = _barcode_image(shipment.waybill or "")
+    bc_w = BOX_W * 0.85
+    c.drawImage(bc_img, BOX_L + (BOX_W - bc_w) / 2, y - barcode_h + 12, width=bc_w, height=barcode_h - 16,
+                mask="auto")
+    c.setFont("Courier-Bold", 9)
+    c.drawCentredString(PAGE_W / 2, y - barcode_h + 4, shipment.waybill or "")
+    y -= barcode_h
+    hline(y)
+
+    pin_row_h = 18
+    c.setFont("Helvetica", 9)
+    c.drawString(BOX_L + 4, y - pin_row_h / 2 - 3, str(receiver.get("pincode", "")))
+    c.setFont("Helvetica-Bold", 9)
+    c.drawRightString(BOX_R - 4, y - pin_row_h / 2 - 3, sort_code)
+    y -= pin_row_h
+    hline(y)
+
+    # --- Section 2: Ship To / payment ---
+    ship_col_w = BOX_W * 0.72
+    ship_x = BOX_L + ship_col_w
+    pad = 4
+    text_w = ship_col_w - 2 * pad
+    lines = [
+        ("Helvetica-Bold", 8, "Ship To:"),
+        ("Helvetica-Bold", 9, str(receiver.get("name", "")).upper()),
+        ("Helvetica", 8, receiver.get("name", "")),
+        ("Helvetica", 8, receiver.get("address", "")),
+        ("Helvetica", 8, locality),
+        ("Helvetica-Bold", 8, f"PIN: {receiver.get('pincode', '')}"),
+    ]
+    line_gap = 10
+    ship_block_h = pad * 2
+    wrapped: List[tuple] = []
+    for font, size, text in lines:
+        for wline in _wrapped_lines(text, font, size, text_w) or [""]:
+            wrapped.append((font, size, wline))
+            ship_block_h += line_gap
+
+    amount = shipment.cod_amount if shipment.payment_mode == "COD" else sum(
+        (i.get("price", 0) * i.get("qty", 1)) for i in items
+    )
+    payment_lines = [
+        ("Helvetica-Bold", 9, "COD" if shipment.payment_mode == "COD" else "Pre-paid"),
+        ("Helvetica-Bold", 9, "Surface"),
+        ("Helvetica-Bold", 10, f"INR {amount:g}"),
+    ]
+    payment_block_h = len(payment_lines) * 16 + pad * 2
+    ship_row_h = max(ship_block_h, payment_block_h)
+
+    ty = y - pad - 8
+    for font, size, text in wrapped:
+        c.setFont(font, size)
+        c.drawString(BOX_L + pad, ty, text)
+        ty -= line_gap
+
+    ty = y - (ship_row_h - payment_block_h) / 2 - 14
+    for font, size, text in payment_lines:
+        c.setFont(font, size)
+        c.drawCentredString((ship_x + BOX_R) / 2, ty, text)
+        ty -= 16
+
+    y -= ship_row_h
+    vline(ship_x, y + ship_row_h, y)
+    hline(y)
+
+    # --- Section 3: seller info, product table ---
+    seller_lines = [
+        f"Seller: {sender.get('name', '')}",
+        f"Address: {sender.get('address', '')}",
+        f"GST: {shipment.seller_gst or ''}",
+    ]
+    seller_wrapped = [
+        wline
+        for line in seller_lines
+        for wline in (_wrapped_lines(line, "Helvetica", 7.5, BOX_W - 2 * pad) or [""])
+    ]
+    info_row_h = max(len(seller_wrapped) * 10 + 8, 24)
+
+    ty = y - 10
+    c.setFont("Helvetica", 7.5)
+    for wline in seller_wrapped:
+        c.drawString(BOX_L + pad, ty, wline)
+        ty -= 10
+
+    y -= info_row_h
+    hline(y)
+
+    header_row_h = 16
+    col1_w = BOX_W * 0.55
+    col2_x = BOX_L + col1_w
+    col3_x = BOX_L + col1_w + (BOX_W - col1_w) / 2
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(BOX_L + pad, y - header_row_h / 2 - 3, "Product (Qty)")
+    c.drawCentredString((col2_x + col3_x) / 2, y - header_row_h / 2 - 3, "Price")
+    c.drawCentredString((col3_x + BOX_R) / 2, y - header_row_h / 2 - 3, "Total")
+    y -= header_row_h
+    vline(col2_x, y + header_row_h, y)
+    vline(col3_x, y + header_row_h, y)
+    hline(y)
+
+    item_row_h = 18
+    total_amount = 0.0
+    for item in items:
+        qty = item.get("qty", 1)
+        price = item.get("price", 0)
+        line_total = price * qty
+        total_amount += line_total
+        c.setFont("Helvetica", 8)
+        c.drawString(BOX_L + pad, y - item_row_h / 2 - 3, f"{item.get('name', '')} (Qty: {qty})")
+        c.drawCentredString((col2_x + col3_x) / 2, y - item_row_h / 2 - 3, f"INR {price:g}")
+        c.drawCentredString((col3_x + BOX_R) / 2, y - item_row_h / 2 - 3, f"INR {line_total:g}")
+        y -= item_row_h
+        vline(col2_x, y + item_row_h, y)
+        vline(col3_x, y + item_row_h, y)
+        hline(y)
+
+    footer_row_h = 16
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(BOX_L + pad, y - footer_row_h / 2 - 3, "Total")
+    c.drawCentredString((col3_x + BOX_R) / 2, y - footer_row_h / 2 - 3, f"INR {total_amount:g}")
+    y -= footer_row_h
+    hline(y)
+
+    # --- Section 4: return barcode, return address ---
+    ret_barcode_h = 45
+    if refnum:
+        ret_img = _barcode_image(refnum)
+        ret_w = BOX_W * 0.6
+        c.drawImage(ret_img, BOX_L + (BOX_W - ret_w) / 2, y - ret_barcode_h + 8, width=ret_w,
+                    height=ret_barcode_h - 12, mask="auto")
+        c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(PAGE_W / 2, y - ret_barcode_h + 2, refnum)
+    y -= ret_barcode_h
+    hline(y)
+
+    addr_row_h = 16
+    c.setFont("Helvetica", 8)
+    c.drawString(BOX_L + pad, y - addr_row_h / 2 - 3, f"Return Address: {sender.get('address', '')}")
+    y -= addr_row_h
+    hline(y)
+
+    vline(BOX_L, top, y)
+    vline(BOX_R, top, y)
+
+    c.showPage()
+    c.save()
+    return buf.getvalue()
