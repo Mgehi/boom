@@ -1,5 +1,6 @@
 import io
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
 import barcode
@@ -18,7 +19,7 @@ BOX_L = MARGIN
 BOX_R = PAGE_W - MARGIN
 BOX_W = BOX_R - BOX_L
 
-LOGO_PATH = "app/assets/delhivery_logo.png"
+LOGO_PATH = str(Path(__file__).resolve().parent.parent / "assets" / "delhivery_logo.png")
 
 
 def _barcode_image(value: str) -> ImageReader:
@@ -148,22 +149,29 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
     hline(y)
 
     # --- Section 3: seller info, product table ---
-    seller_lines = [
-        f"Seller: {sender.get('name', '')}",
-        f"Address: {sender.get('address', '')}",
-        f"GST: {shipment.seller_gst or ''}",
+    seller_fields = [
+        ("Seller: ", sender.get("name", "")),
+        ("Address: ", sender.get("address", "")),
+        ("GST: ", shipment.seller_gst or ""),
     ]
-    seller_wrapped = [
-        wline
-        for line in seller_lines
-        for wline in (_wrapped_lines(line, "Helvetica", 7.5, BOX_W - 2 * pad) or [""])
-    ]
+    seller_wrapped: List[tuple] = []
+    for label, value in seller_fields:
+        label_w = c.stringWidth(label, "Helvetica-Bold", 7.5)
+        chunks = _wrapped_lines(value, "Helvetica", 7.5, BOX_W - 2 * pad - label_w) or [""]
+        seller_wrapped.append((label, chunks[0]))
+        for chunk in chunks[1:]:
+            seller_wrapped.append((None, chunk))
     info_row_h = max(len(seller_wrapped) * 10 + 8, 24)
 
     ty = y - 10
-    c.setFont("Helvetica", 7.5)
-    for wline in seller_wrapped:
-        c.drawString(BOX_L + pad, ty, wline)
+    for label, text in seller_wrapped:
+        x = BOX_L + pad
+        if label:
+            c.setFont("Helvetica-Bold", 7.5)
+            c.drawString(x, ty, label)
+            x += c.stringWidth(label, "Helvetica-Bold", 7.5)
+        c.setFont("Helvetica", 7.5)
+        c.drawString(x, ty, text)
         ty -= 10
 
     y -= info_row_h
