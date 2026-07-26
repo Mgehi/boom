@@ -1,8 +1,9 @@
+import asyncio
 import csv
 import io
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
@@ -30,17 +31,27 @@ router = APIRouter(tags=["shipments"])
 FINAL_STATUSES = {ShipmentStatus.DELIVERED.value, ShipmentStatus.RTO.value}
 SYNC_STALE_SECONDS = 300
 
+# Conservative cap on concurrent Delhivery calls during bulk upload. Delhivery
+# doesn't document a rate limit we can size this against precisely, so this is
+# a cautious default — raise it if bulk uploads prove reliable at this level.
+BULK_UPLOAD_CONCURRENCY = 5
 
-async def _create_shipment_internal(order: CreateShipmentRequest, user_id: str, db: AsyncSession) -> ShipmentModel:
-    """Create shipment in Delhivery, then persist it."""
+
+async def _call_delhivery_for_order(order: CreateShipmentRequest) -> Tuple[Dict[str, Any], Optional[str]]:
+    """Manifest one shipment with Delhivery. Returns (raw response, waybill or None)."""
     delhivery_response = await create_delhivery_shipment(order)
-
     waybill = None
     if delhivery_response.get("packages"):
         waybill = delhivery_response["packages"][0].get("waybill")
+    return delhivery_response, waybill
 
+
+def _build_shipment_model(
+    order: CreateShipmentRequest, user_id: str, waybill: Optional[str], delhivery_response: Dict[str, Any]
+) -> ShipmentModel:
+    """Build (but don't persist) a ShipmentModel row from an order + its Delhivery response."""
     now = datetime.now(timezone.utc)
-    shipment = ShipmentModel(
+    return ShipmentModel(
         user_id=user_id,
         order_id=order.order_id,
         waybill=waybill,
@@ -62,6 +73,12 @@ async def _create_shipment_internal(order: CreateShipmentRequest, user_id: str, 
         created_at=now,
         updated_at=now,
     )
+
+
+async def _create_shipment_internal(order: CreateShipmentRequest, user_id: str, db: AsyncSession) -> ShipmentModel:
+    """Create shipment in Delhivery, then persist it."""
+    delhivery_response, waybill = await _call_delhivery_for_order(order)
+    shipment = _build_shipment_model(order, user_id, waybill, delhivery_response)
     db.add(shipment)
     await db.commit()
     await db.refresh(shipment)
@@ -306,9 +323,10 @@ async def bulk_upload_shipments(
 ):
     """Upload CSV file to create multiple shipments at once.
 
-    NOTE: batches beyond a couple hundred rows can exceed Vercel's Hobby-tier
-    function timeout since each row is a sequential Delhivery API call — see
-    LIMITS_AND_GOTCHAS.md.
+    Rows are parsed up front, then sent to Delhivery concurrently (bounded by
+    BULK_UPLOAD_CONCURRENCY) instead of one at a time, and persisted in
+    periodic batched commits — see LIMITS_AND_GOTCHAS.md for the timeout math
+    this improves on.
     """
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
@@ -326,6 +344,8 @@ async def bulk_upload_shipments(
 
     results = {"total": 0, "success": 0, "failed": 0, "shipments": [], "errors": []}
 
+    # Pass 1: parse every row up front, so a bad row never costs a Delhivery call.
+    parsed_orders = []
     for row in reader:
         results["total"] += 1
         try:
@@ -375,14 +395,7 @@ async def bulk_upload_shipments(
                 seller_invoice=row.get("invoice_number", "").strip(),
                 shipment_type=row.get("shipment_type", "FWD").strip() or "FWD",
             )
-
-            shipment = await _create_shipment_internal(order, current_user.user_id, db)
-            results["success"] += 1
-            results["shipments"].append({
-                "order_id": shipment.order_id,
-                "waybill": shipment.waybill,
-                "status": shipment.status,
-            })
+            parsed_orders.append(order)
         except Exception as e:
             results["failed"] += 1
             results["errors"].append({
@@ -391,6 +404,41 @@ async def bulk_upload_shipments(
             })
             logger.error(f"Bulk upload error for {row.get('order_id')}: {str(e)}")
 
+    # Pass 2: manifest with Delhivery concurrently, bounded by a semaphore.
+    semaphore = asyncio.Semaphore(BULK_UPLOAD_CONCURRENCY)
+
+    async def _call_bounded(order: CreateShipmentRequest):
+        async with semaphore:
+            try:
+                delhivery_response, waybill = await _call_delhivery_for_order(order)
+                return order, delhivery_response, waybill, None
+            except Exception as e:
+                return order, None, None, e
+
+    call_results = await asyncio.gather(*[_call_bounded(o) for o in parsed_orders])
+
+    # Pass 3: persist sequentially (a single AsyncSession can't be used concurrently),
+    # committing periodically instead of once per row.
+    for i, (order, delhivery_response, waybill, error) in enumerate(call_results):
+        if error is not None:
+            results["failed"] += 1
+            results["errors"].append({"order_id": order.order_id, "error": str(error)})
+            logger.error(f"Bulk upload error for {order.order_id}: {str(error)}")
+            continue
+
+        shipment = _build_shipment_model(order, current_user.user_id, waybill, delhivery_response)
+        db.add(shipment)
+        results["success"] += 1
+        results["shipments"].append({
+            "order_id": shipment.order_id,
+            "waybill": shipment.waybill,
+            "status": shipment.status,
+        })
+
+        if (i + 1) % 50 == 0:
+            await db.commit()
+
+    await db.commit()
     return results
 
 
