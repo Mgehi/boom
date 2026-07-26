@@ -163,9 +163,15 @@ async def schedule_delhivery_pickup(pickup_data: PickupRequest) -> Dict[str, Any
                     return result
                 else:
                     error_msg = result.get("error", result.get("detail", "Pickup scheduling failed"))
+                    logger.error(f"Pickup scheduling failed: {error_msg}")
+                    if "wallet balance" in str(error_msg).lower():
+                        raise HTTPException(status_code=400, detail="Pickup scheduling failed: insufficient wallet balance")
                     raise HTTPException(status_code=400, detail=f"Delhivery error: {error_msg}")
             else:
                 error_text = response.text[:300]
+                logger.error(f"Pickup scheduling failed ({response.status_code}): {error_text}")
+                if "wallet balance" in error_text.lower():
+                    raise HTTPException(status_code=400, detail="Pickup scheduling failed: insufficient wallet balance")
                 raise HTTPException(status_code=400, detail=f"Delhivery error: {error_text}")
     except HTTPException:
         raise
