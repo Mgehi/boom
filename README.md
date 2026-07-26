@@ -11,8 +11,8 @@ Multi-tenant dashboard that auto-manifests shipments with Delhivery, tracks them
 
 - Python 3.11+
 - Node.js + Yarn
-- A Postgres database — see [`POSTGRES_SETUP.md`](POSTGRES_SETUP.md) for a free one
-- A Google OAuth client — see [`GOOGLE_OAUTH_SETUP.md`](GOOGLE_OAUTH_SETUP.md)
+- A Postgres database (e.g. Aiven's free tier)
+- A Google OAuth client (via Google Cloud Console)
 - A Delhivery API key (franchise account)
 
 ## Run it locally
@@ -29,8 +29,8 @@ pip install -r requirements-dev.txt
 Create `backend/.env`:
 
 ```
-DATABASE_URL=postgresql+asyncpg://...          # see POSTGRES_SETUP.md
-GOOGLE_CLIENT_ID=...                            # see GOOGLE_OAUTH_SETUP.md
+DATABASE_URL=postgresql+asyncpg://...
+GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
 FRONTEND_URL=http://localhost:3000
@@ -92,8 +92,4 @@ REACT_APP_BACKEND_URL=http://localhost:8000 DATABASE_URL=... pytest tests/
 
 ## Deploying
 
-Deploys to Vercel as a single project (frontend static build + Python function, same domain). See:
-
-- [`GOOGLE_OAUTH_SETUP.md`](GOOGLE_OAUTH_SETUP.md) — Google OAuth client setup
-- [`POSTGRES_SETUP.md`](POSTGRES_SETUP.md) — free Postgres setup
-- [`LIMITS_AND_GOTCHAS.md`](LIMITS_AND_GOTCHAS.md) — free-tier limits and things to watch for
+Deploys to Vercel as a single project (frontend static build + Python function, same domain). See [`LIMITS_AND_GOTCHAS.md`](LIMITS_AND_GOTCHAS.md) for free-tier limits and things to watch for.
