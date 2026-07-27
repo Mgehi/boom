@@ -64,6 +64,12 @@ def _wrapped_lines(text: str, font: str, size: float, max_width: float) -> List[
     return lines or [""]
 
 
+def _fmt_amount(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.2f}"
+
+
 async def build_label_pdf(shipment: Shipment) -> bytes:
     sender = shipment.sender or {}
     receiver = shipment.receiver or {}
@@ -162,7 +168,7 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
     payment_lines = [
         ("Helvetica-Bold", 9, "COD" if shipment.payment_mode == "COD" else "Pre-paid"),
         ("Helvetica-Bold", 9, "Surface"),
-        ("Helvetica-Bold", 10, f"INR {amount:g}"),
+        ("Helvetica-Bold", 10, f"INR {_fmt_amount(amount)}"),
     ]
     payment_block_h = len(payment_lines) * 16 + pad * 2
     ship_row_h = max(ship_block_h, payment_block_h)
@@ -239,8 +245,8 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
         for nline in name_lines:
             c.drawString(BOX_L + pad, ty, nline)
             ty -= 10
-        c.drawCentredString((col2_x + col3_x) / 2, y - item_row_h / 2 - 3, f"INR {price:g}")
-        c.drawCentredString((col3_x + BOX_R) / 2, y - item_row_h / 2 - 3, f"INR {line_total:g}")
+        c.drawCentredString((col2_x + col3_x) / 2, y - item_row_h / 2 - 3, f"INR {_fmt_amount(price)}")
+        c.drawCentredString((col3_x + BOX_R) / 2, y - item_row_h / 2 - 3, f"INR {_fmt_amount(line_total)}")
         y -= item_row_h
         vline(col2_x, y + item_row_h, y)
         vline(col3_x, y + item_row_h, y)
@@ -249,7 +255,7 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
     footer_row_h = 16
     c.setFont("Helvetica-Bold", 8)
     c.drawString(BOX_L + pad, y - footer_row_h / 2 - 3, "Total")
-    c.drawCentredString((col3_x + BOX_R) / 2, y - footer_row_h / 2 - 3, f"INR {total_amount:g}")
+    c.drawCentredString((col3_x + BOX_R) / 2, y - footer_row_h / 2 - 3, f"INR {_fmt_amount(total_amount)}")
     y -= footer_row_h
     hline(y)
 
