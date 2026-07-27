@@ -14,6 +14,7 @@ export const SchedulePickup = () => {
   const [formData, setFormData] = useState({
     pickup_location: "",
     pickup_date: "",
+    pickup_time: "10:00",
     expected_package_count: 1,
   });
 
@@ -35,16 +36,16 @@ export const SchedulePickup = () => {
     setLoading(true);
 
     try {
-      // Send default pickup_time of "10:00:00" - backend handles it
       await api.post("/pickups", {
         ...formData,
-        pickup_time: "10:00:00",
+        pickup_time: `${formData.pickup_time}:00`,
         expected_package_count: parseInt(formData.expected_package_count),
       });
       toast.success("Pickup scheduled successfully!");
       setFormData({
         pickup_location: defaultPickup,
         pickup_date: "",
+        pickup_time: "10:00",
         expected_package_count: 1,
       });
     } catch (error) {
@@ -92,7 +93,7 @@ export const SchedulePickup = () => {
               <p className="text-xs text-zinc-500 mt-2">Must match your registered warehouse name in Delhivery exactly</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <Label htmlFor="pickup_date" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">
                   Pickup Date *
@@ -106,6 +107,22 @@ export const SchedulePickup = () => {
                   required
                   min={new Date().toISOString().split("T")[0]}
                   data-testid="pickup-date-input"
+                  className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="pickup_time" className="text-xs uppercase tracking-wider text-zinc-600 mb-2 block">
+                  Pickup Time *
+                </Label>
+                <Input
+                  id="pickup_time"
+                  name="pickup_time"
+                  type="time"
+                  value={formData.pickup_time}
+                  onChange={handleChange}
+                  required
+                  data-testid="pickup-time-input"
                   className="bg-white border-zinc-200 focus:ring-2 focus:ring-zinc-900 rounded-sm"
                 />
               </div>
