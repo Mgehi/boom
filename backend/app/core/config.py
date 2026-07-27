@@ -17,6 +17,10 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "*"
 
+    # Debug flag: bypass the DB pool size cap (uses NullPool - unlimited connections)
+    # to test whether pool contention is actually the bottleneck. Not meant to stay on.
+    DB_POOL_UNLIMITED: bool = False
+
     @property
     def cors_origins_list(self) -> list[str]:
         return self.CORS_ORIGINS.split(",")

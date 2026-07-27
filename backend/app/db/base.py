@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
@@ -15,14 +16,17 @@ class Base(DeclarativeBase):
 # opening a new connection per request with no ceiling (which is what
 # NullPool would do). pool_pre_ping guards against a connection going stale
 # while its serverless instance sits frozen between invocations.
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    pool_size=3,
-    max_overflow=2,
-    pool_timeout=10,
-    pool_recycle=300,
-    pool_pre_ping=True,
-)
+if settings.DB_POOL_UNLIMITED:
+    engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool, pool_pre_ping=True)
+else:
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        pool_size=3,
+        max_overflow=2,
+        pool_timeout=10,
+        pool_recycle=300,
+        pool_pre_ping=True,
+    )
 
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
