@@ -65,10 +65,16 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
     # --- Section 1: seller / delhivery header, barcode, pin / sort code ---
     top = y
     hline(top)
-    header_h = 34
     mid_x = BOX_L + BOX_W * 0.45
-    c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString((BOX_L + mid_x) / 2, top - header_h / 2 - 4, sender.get("name", ""))
+    sender_name = sender.get("name", "")
+    name_lines = _wrapped_lines(sender_name, "Helvetica-Bold", 9, mid_x - BOX_L - 2 * 4) or [""]
+    header_h = max(34, len(name_lines) * 11 + 12)
+
+    c.setFont("Helvetica-Bold", 9)
+    ty = top - (header_h - len(name_lines) * 11) / 2 - 8
+    for nline in name_lines:
+        c.drawCentredString((BOX_L + mid_x) / 2, ty, nline)
+        ty -= 11
     try:
         logo = ImageReader(LOGO_PATH)
         c.drawImage(
@@ -190,15 +196,20 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
     vline(col3_x, y + header_row_h, y)
     hline(y)
 
-    item_row_h = 18
     total_amount = 0.0
     for item in items:
         qty = item.get("qty", 1)
         price = item.get("price", 0)
         line_total = price * qty
         total_amount += line_total
+        name_lines = _wrapped_lines(f"{item.get('name', '')} (Qty: {qty})", "Helvetica", 8, col1_w - 2 * pad) or [""]
+        item_row_h = max(len(name_lines) * 10 + 6, 18)
+
         c.setFont("Helvetica", 8)
-        c.drawString(BOX_L + pad, y - item_row_h / 2 - 3, f"{item.get('name', '')} (Qty: {qty})")
+        ty = y - 10
+        for nline in name_lines:
+            c.drawString(BOX_L + pad, ty, nline)
+            ty -= 10
         c.drawCentredString((col2_x + col3_x) / 2, y - item_row_h / 2 - 3, f"INR {price:g}")
         c.drawCentredString((col3_x + BOX_R) / 2, y - item_row_h / 2 - 3, f"INR {line_total:g}")
         y -= item_row_h
