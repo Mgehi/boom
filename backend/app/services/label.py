@@ -6,7 +6,8 @@ from typing import Any, Dict, List
 import barcode
 from barcode.writer import ImageWriter
 from reportlab.lib.pagesizes import inch
-from reportlab.lib.utils import ImageReader, simpleSplit
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from app.db.models import Shipment
@@ -32,7 +33,35 @@ def _barcode_image(value: str) -> ImageReader:
 
 
 def _wrapped_lines(text: str, font: str, size: float, max_width: float) -> List[str]:
-    return simpleSplit(text or "", font, size, max_width)
+    """Greedy word-wrap that also hard-breaks any single word wider than max_width
+    (e.g. a SKU code with no spaces), so text never overflows its column."""
+    lines: List[str] = []
+    current = ""
+    for word in (text or "").split(" "):
+        if not word:
+            continue
+        candidate = f"{current} {word}" if current else word
+        if stringWidth(candidate, font, size) <= max_width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        if stringWidth(word, font, size) <= max_width:
+            current = word
+            continue
+        chunk = ""
+        for ch in word:
+            piece = chunk + ch
+            if stringWidth(piece, font, size) <= max_width or not chunk:
+                chunk = piece
+            else:
+                lines.append(chunk)
+                chunk = ch
+        current = chunk
+    if current:
+        lines.append(current)
+    return lines or [""]
 
 
 async def build_label_pdf(shipment: Shipment) -> bytes:
