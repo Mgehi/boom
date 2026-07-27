@@ -4,6 +4,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
+DB_POOL_UNLIMITED_LOCAL = 1
 
 class Base(DeclarativeBase):
     pass
@@ -16,7 +17,7 @@ class Base(DeclarativeBase):
 # opening a new connection per request with no ceiling (which is what
 # NullPool would do). pool_pre_ping guards against a connection going stale
 # while its serverless instance sits frozen between invocations.
-if settings.DB_POOL_UNLIMITED:
+if settings.DB_POOL_UNLIMITED or DB_POOL_UNLIMITED_LOCAL == 1:
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool, pool_pre_ping=True)
 else:
     engine = create_async_engine(
