@@ -225,9 +225,22 @@ async def build_label_pdf(shipment: Shipment) -> bytes:
     y -= ret_barcode_h
     hline(y)
 
-    addr_row_h = 16
-    c.setFont("Helvetica", 8)
-    c.drawString(BOX_L + pad, y - addr_row_h / 2 - 3, f"Return Address: {sender.get('address', '')}")
+    addr_label = "Return Address: "
+    addr_label_w = c.stringWidth(addr_label, "Helvetica-Bold", 8)
+    addr_chunks = _wrapped_lines(sender.get("address", ""), "Helvetica", 8, BOX_W - 2 * pad - addr_label_w) or [""]
+    addr_wrapped = [(addr_label, addr_chunks[0])] + [(None, chunk) for chunk in addr_chunks[1:]]
+    addr_row_h = len(addr_wrapped) * 10 + 6
+
+    ty = y - 10
+    for label, text in addr_wrapped:
+        x = BOX_L + pad
+        if label:
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(x, ty, label)
+            x += addr_label_w
+        c.setFont("Helvetica", 8)
+        c.drawString(x, ty, text)
+        ty -= 10
     y -= addr_row_h
     hline(y)
 
